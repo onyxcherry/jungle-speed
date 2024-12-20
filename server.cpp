@@ -11,9 +11,12 @@
 #include <chrono>
 #include <ctime>
 #include <stdexcept>
+#include <algorithm>
 
 #define MAX_EVENTS 10
 #define BUFFER_SIZE 1024
+
+const std::string msg_end_marker = "\t\t";
 
 using json = nlohmann::json;
 
@@ -22,34 +25,144 @@ struct Player
     int fd;
     std::string username;
     bool active = true;
+    std::string top_card = "";
+    std::vector<std::string> cards_facing_up{};
+    std::vector<std::string> cards_facing_down{};
+    // where to put that? In Game or server?
     std::chrono::time_point<std::chrono::steady_clock> last_action;
+    std::vector<char> msg_in{};
+    std::vector<char> msg_out{};
 };
 
-struct Game
+class Game
 {
     int id;
-    std::vector<Player> players;
+    std::vector<Player> players{};
     bool is_started = false;
-    std::vector<std::string> cards_in_play;
-    bool totem_caught = false;
+    std::vector<std::string> cards_in_play{};
+    bool totem_held = false;
+
+public:
+    Game(int game_id) // : id(game_id)
+    {
+        id = game_id;
+        cards_in_play = generate_cards();
+    }
+
+    bool has_been_started() const
+    {
+        return is_started;
+    }
+
+    bool add_player(Player &player)
+    {
+        if (!has_been_started())
+        {
+            players.push_back(player);
+            return true;
+        }
+        return false;
+    }
+
+    int get_identifier() const
+    {
+        return id;
+    }
+
+    int get_players_count() const
+    {
+        return players.size();
+    }
+
+    void start()
+    {
+        is_started = true;
+    }
+
+    std::string turn_card()
+    {
+        if (cards_in_play.size() == 0)
+        {
+            return "";
+        }
+        std::string turned_up_card = cards_in_play.back();
+        cards_in_play.pop_back();
+        return turned_up_card;
+    }
+
+    // pair<caught_successfully, should_catch>
+    std::pair<bool, bool> catch_totem(int client_fd)
+    {
+        auto cards_repeats = count_cards_repeats();
+        Player player = get_player(client_fd);
+        bool should_catch = cards_repeats[player.top_card] > 1;
+
+        if (!totem_held)
+        {
+            totem_held = true;
+            return std::make_pair(true, should_catch);
+        }
+        return std::make_pair(false, should_catch);
+    }
+
+private:
+    std::vector<std::string> generate_cards(int n = 70)
+    {
+        return std::vector<std::string>{
+            "quadruple_mobius_strip_yellow",
+            "quadruple_mobius_strip_purple",
+            "quadruple_mobius_strip_red",
+            "quadruple_shuriken_purple",
+            "quadruple_shuriken_green",
+            "quadruple_shuriken_orange",
+        };
+    }
+
+    std::unordered_map<std::string, int> count_cards_repeats()
+    {
+        std::unordered_map<std::string, int> cards_repeats;
+
+        for (const auto &player : players)
+        {
+            ++cards_repeats[player.top_card];
+        }
+        return cards_repeats;
+    }
+
+    Player get_player(int client_fd)
+    {
+        // TODO
+        return players[0];
+    }
 };
 
 class JungleSpeedServer
 {
     int server_fd;
     sockaddr_in server_addr;
-    std::unordered_map<int, Player> players;
+    // <client_fd, Player>
+    // <game_number, game_obj>
     std::unordered_map<int, Game> games;
+    // <client_fd, game_obj_with_player>
+    std::unordered_map<int, Game> players_in_games;
+    std::vector<Player *> players_out_of_games;
     int next_game_id = 1;
     int next_player_id = 1;
     int epoll_fd;
+    int SERVER_PTR = 1;
 
-    std::string ip_address;
-    uint16_t port;
+    const std::string ip_address;
+    const uint16_t port;
 
 public:
     JungleSpeedServer(const std::string &ip, uint16_t port)
         : ip_address(ip), port(port) {}
+
+    ~JungleSpeedServer()
+    {
+        close(server_fd);
+        close(epoll_fd);
+    }
 
     void start_server()
     {
@@ -60,21 +173,24 @@ public:
 
         while (true)
         {
-            epoll_event events[MAX_EVENTS];
-            int event_count = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
+            epoll_event ee;
+            int event_count = epoll_wait(epoll_fd, &ee, 1, -1);
 
             // TODO: beware that system's fd number *cannot* be identifier of a client
             // as fd is a first-free number, not unique seq!
-            for (int i = 0; i < event_count; ++i)
+            if (ee.data.ptr == &SERVER_PTR)
             {
-                if (events[i].data.fd == server_fd)
-                {
-                    accept_new_connection();
-                }
-                else
-                {
-                    handle_client_event(events[i].data.fd);
-                }
+                accept_new_connection();
+            }
+            else if (ee.events & EPOLLIN)
+            {
+                Player *player = (Player *)(ee.data.ptr);
+                handle_client_event(*player);
+            }
+            else if (ee.events & EPOLLOUT)
+            {
+                Player *player = (Player *)(ee.data.ptr);
+                send_messages_to_client(*player);
             }
         }
     }
@@ -125,11 +241,11 @@ private:
             exit(EXIT_FAILURE);
         }
 
-        epoll_event event;
-        event.events = EPOLLIN;
-        event.data.fd = server_fd;
+        epoll_event ee;
+        ee.events = EPOLLIN;
+        ee.data.ptr = &SERVER_PTR;
 
-        if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_fd, &event) == -1)
+        if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_fd, &ee) == -1)
         {
             perror("Epoll control failed");
             close(server_fd);
@@ -148,10 +264,16 @@ private:
             perror("Accept failed");
             return;
         }
+        // TODO: std::unique_ptr<Player> player(new Player{});
+        Player *player = new Player{};
+        player->fd = client_fd;
+        player->username = "Player" + std::to_string(next_player_id++);
+        player->last_action = std::chrono::steady_clock::now();
+        players_out_of_games.push_back(player);
 
         epoll_event event;
         event.events = EPOLLIN;
-        event.data.fd = client_fd;
+        event.data.ptr = player;
 
         if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &event) == -1)
         {
@@ -159,94 +281,161 @@ private:
             close(client_fd);
             return;
         }
-
-        players[client_fd] = {client_fd, "Player" + std::to_string(next_player_id++), true,
-                              std::chrono::steady_clock::now()};
         std::cout << "New client connected: FD=" << client_fd << "\n";
     }
 
-    void handle_client_event(int client_fd)
+    std::string extract_message(std::vector<char> &data)
     {
-        char buffer[BUFFER_SIZE] = {0};
-        // TODO: support splitted message in the stream
-        // maybe check if current buf content is a valid JSON message?
-        ssize_t bytes_received = recv(client_fd, buffer, BUFFER_SIZE - 1, 0);
+        auto it = std::search(data.begin(), data.end(), msg_end_marker.begin(), msg_end_marker.end());
+        if (it == data.end())
+        {
+            return "";
+        }
+
+        std::string result(data.begin(), it);
+        data.erase(data.begin(), it + msg_end_marker.size());
+        return result;
+    }
+
+    void handle_client_event(Player &player)
+    {
+        char buffer[BUFFER_SIZE] = {};
+        ssize_t bytes_received = recv(player.fd, buffer, BUFFER_SIZE, 0);
+
         if (bytes_received <= 0)
         {
-            disconnect_client(client_fd);
+            std::cout << "[Event handling] Will disconnect client " << player.fd << " as received " << bytes_received << " bytes\n";
+            disconnect_client(player);
+            return;
+        }
+        player.msg_in.insert(player.msg_in.end(), buffer, buffer + bytes_received);
+        std::string message = extract_message(player.msg_in);
+
+        if (message == "")
+        {
             return;
         }
 
-        std::string request(buffer);
         try
         {
-            json request_json = json::parse(request);
-            process_client_message(client_fd, request_json);
+            json request_json = json::parse(message);
+            process_client_message(player, request_json);
         }
         catch (json::parse_error &e)
         {
-            send_error(client_fd, "Invalid JSON format.");
+            send_error(player, "Invalid JSON format.");
         }
     }
 
-    void disconnect_client(int client_fd)
+    void send_messages_to_client(Player &player)
     {
-        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client_fd, nullptr);
-        close(client_fd);
-        players.erase(client_fd);
-        std::cout << "Client disconnected: FD=" << client_fd << "\n";
+        int sent_bytes = send(player.fd, player.msg_out.data(), player.msg_out.size(), 0);
+        if (sent_bytes <= 0)
+        {
+            std::cout << "[Sending] Will disconnect client " << player.fd << " as trying to send returned " << sent_bytes << '\n';
+            disconnect_client(player);
+            return;
+        }
+        player.msg_out.erase(player.msg_out.begin(), player.msg_out.begin() + sent_bytes);
+
+        if (player.msg_out.size() == 0)
+        {
+            epoll_event event;
+            event.events = EPOLLIN;
+            event.data.ptr = &player;
+
+            if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, player.fd, &event) == -1)
+            {
+                perror("Epoll del for OUT client failed");
+                close(player.fd);
+                return;
+            }
+        }
     }
 
-    void send_message(int client_fd, const json &message)
+    void disconnect_client(Player &disconnected_player)
+    {
+        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, disconnected_player.fd, nullptr);
+        close(disconnected_player.fd);
+
+        players_out_of_games.erase(
+            std::remove_if(players_out_of_games.begin(), players_out_of_games.end(), [&](Player const *player)
+                           { return player->fd == disconnected_player.fd; }),
+            players_out_of_games.end());
+
+        players_in_games.erase(disconnected_player.fd);
+        std::cout << "Client disconnected: FD=" << disconnected_player.fd << "\n";
+    }
+
+    // void send_message(Player &player, const json &message)
+    // {
+    //     std::string serialized_message = message.dump();
+    //     send(player.fd, serialized_message.c_str(), serialized_message.size(), 0);
+    // }
+
+    void add_message_to_buffer_to_send(Player &player, const json &message)
     {
         std::string serialized_message = message.dump();
-        send(client_fd, serialized_message.c_str(), serialized_message.size(), 0);
+        player.msg_out.insert(player.msg_out.end(), serialized_message.begin(), serialized_message.end());
+
+        epoll_event event;
+        event.events = EPOLLIN | EPOLLOUT;
+        event.data.ptr = &player;
+
+        if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, player.fd, &event) == -1)
+        {
+            perror("Epoll add for OUT client failed");
+            close(player.fd);
+            return;
+        }
     }
 
-    void send_error(int client_fd, const std::string &error_message)
+    void send_error(Player &player, const std::string &error_message)
     {
         json response = {{"error", error_message}};
-        send_message(client_fd, response);
+        add_message_to_buffer_to_send(player, response);
     }
 
-    void process_client_message(int client_fd, const json &message)
+    void process_client_message(Player &player, const json &message)
     {
         if (!message.contains("action"))
         {
-            send_error(client_fd, "Missing 'action' field.");
+            send_error(player, "Missing 'action' field.");
             return;
         }
 
         std::string action = message["action"];
-        players[client_fd].last_action = std::chrono::steady_clock::now();
+        player.last_action = std::chrono::steady_clock::now();
 
         if (action == "LIST_GAMES")
         {
-            list_games(client_fd);
+            const json message = list_games();
+            add_message_to_buffer_to_send(player, message);
         }
         else if (action == "CREATE_GAME")
         {
-            create_game(client_fd);
+            const json message = create_game();
+            add_message_to_buffer_to_send(player, message);
         }
         else if (action == "JOIN_GAME")
         {
-            join_game(client_fd, message);
+            join_game(player, message);
         }
         else if (action == "TURN_CARD")
         {
-            turn_card(client_fd, message);
+            turn_card(player);
         }
         else if (action == "CATCH_TOTEM")
         {
-            catch_totem(client_fd, message);
+            catch_totem(player);
         }
         else
         {
-            send_error(client_fd, "Unknown action.");
+            send_error(player, "Unknown action.");
         }
     }
 
-    void list_games(int client_fd)
+    json list_games()
     {
         json response;
         response["action"] = "LIST_GAMES";
@@ -255,58 +444,73 @@ private:
         for (const auto &pair : games)
         {
             const Game &game = pair.second;
-            json game_info = {{"game_id", game.id},
-                              {"player_count", game.players.size()},
-                              {"is_started", game.is_started}};
+            json game_info = {{"game_id", game.get_identifier()},
+                              {"player_count", game.get_players_count()},
+                              {"is_started", game.has_been_started()}};
             response["games"].push_back(game_info);
         }
-
-        send_message(client_fd, response);
+        return response;
     }
 
-    void create_game(int client_fd)
+    json create_game()
     {
         int game_id = next_game_id++;
-        games[game_id] = {game_id};
+        Game game(game_id);
+        games.insert(std::make_pair(game_id, game));
         json response = {{"action", "CREATE_GAME"}, {"game_id", game_id}};
-        send_message(client_fd, response);
+        return response;
     }
 
-    void join_game(int client_fd, const json &message)
+    void join_game(Player &player, const json &message)
     {
         if (!message.contains("game_id"))
         {
-            send_error(client_fd, "Missing 'game_id' field.");
+            send_error(player, "Missing 'game_id' field.");
             return;
         }
 
         int game_id = message["game_id"];
         if (games.find(game_id) == games.end())
         {
-            send_error(client_fd, "Game not found.");
+            send_error(player, "Game not found.");
             return;
         }
 
-        Game &game = games[game_id];
-        if (game.is_started)
+        Game game = games.at(game_id);
+        if (game.has_been_started())
         {
-            send_error(client_fd, "Game already started.");
+            send_error(player, "Game already started.");
             return;
         }
-
-        game.players.push_back(players[client_fd]);
+        game.add_player(player);
         json response = {{"action", "JOIN_GAME"}, {"game_id", game_id}};
-        send_message(client_fd, response);
+        add_message_to_buffer_to_send(player, response);
     }
 
-    void turn_card(int client_fd, const json &message)
+    void turn_card(Player &player)
     {
-        // Implement game logic for turning cards.
+        auto player_game_it = games.find(player.fd);
+        if (player_game_it == games.end())
+        {
+            send_error(player, "Cannot turn card as player is not part of any game.");
+        }
+        std::string card = player_game_it->second.turn_card();
+        json response = {{"result", "TURN_CARD"}, {"card", (card == "") ? NULL : card}};
+        add_message_to_buffer_to_send(player, response);
     }
 
-    void catch_totem(int client_fd, const json &message)
+    void catch_totem(Player &player)
     {
-        // Implement game logic for catching the totem.
+        auto player_game_it = games.find(player.fd);
+        if (player_game_it == games.end())
+        {
+            send_error(player, "Cannot catch the totem as player is not part of any game.");
+        }
+
+        auto [caught, should_catch] = player_game_it->second.catch_totem(player.fd);
+        // TODO: add bussiness logic of result of catching totem depending on battle or should (not) catch
+        json response = {{"result", "CATCH_TOTEM"}, {"caught", caught}};
+        add_message_to_buffer_to_send(player, response);
     }
 };
 
