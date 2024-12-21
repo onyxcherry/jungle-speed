@@ -131,8 +131,14 @@ private:
 
     Player get_player(int client_fd)
     {
-        // TODO
-        return players[0];
+
+        auto it = std::find_if(players.begin(), players.end(), [client_fd](const Player &p)
+                               { return p.fd == client_fd; });
+        if (it == players.end())
+        {
+            throw std::runtime_error("Cannot find player in this game!");
+        }
+        return *it;
     }
 };
 
@@ -359,11 +365,7 @@ private:
         epoll_ctl(epoll_fd, EPOLL_CTL_DEL, disconnected_player.fd, nullptr);
         close(disconnected_player.fd);
 
-        players_out_of_games.erase(
-            std::remove_if(players_out_of_games.begin(), players_out_of_games.end(), [&](Player const *player)
-                           { return player->fd == disconnected_player.fd; }),
-            players_out_of_games.end());
-
+        remove_player_from_waiting_list(disconnected_player.fd);
         players_in_games.erase(disconnected_player.fd);
         std::cout << "Client disconnected: FD=" << disconnected_player.fd << "\n";
     }
@@ -497,6 +499,8 @@ private:
             return make_pair(false, response);
         }
 
+        remove_player_from_waiting_list(player.fd);
+        players_in_games.insert(std::make_pair(player.fd, game));
         game.add_player(player);
         json response = {{"game_id", game_id}};
         return make_pair(true, response);
@@ -535,6 +539,14 @@ private:
             {"caught", caught},
         };
         return make_pair(true, response);
+    }
+
+    void remove_player_from_waiting_list(int client_fd)
+    {
+        players_out_of_games.erase(
+            std::remove_if(players_out_of_games.begin(), players_out_of_games.end(), [client_fd](Player const *player)
+                           { return player->fd == client_fd; }),
+            players_out_of_games.end());
     }
 };
 
