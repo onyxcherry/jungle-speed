@@ -492,7 +492,7 @@ private:
             return make_pair(false, response);
         }
 
-        Game game = games.at(game_id);
+        Game &game = games.at(game_id);
         if (game.has_been_started())
         {
             json response = {{"error"}, {"Game already started."}};
