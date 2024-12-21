@@ -17,6 +17,7 @@
 #define BUFFER_SIZE 1024
 
 const std::string msg_end_marker = "\t\t";
+const std::string EMPTY_CARD = "";
 
 using json = nlohmann::json;
 
@@ -25,7 +26,7 @@ struct Player
     int fd;
     std::string username;
     bool active = true;
-    std::string top_card = "";
+    std::string top_card = EMPTY_CARD;
     std::vector<std::string> cards_facing_up{};
     std::vector<std::string> cards_facing_down{};
     // where to put that? In Game or server?
@@ -79,22 +80,24 @@ public:
         is_started = true;
     }
 
-    std::string turn_card()
+    std::string turn_card(int player_id)
     {
         if (cards_in_play.size() == 0)
         {
-            return "";
+            return EMPTY_CARD;
         }
+        Player &player = get_player(player_id);
         std::string turned_up_card = cards_in_play.back();
         cards_in_play.pop_back();
+        player.top_card = turned_up_card;
         return turned_up_card;
     }
 
     // pair<caught_successfully, should_catch>
-    std::pair<bool, bool> catch_totem(int client_fd)
+    std::pair<bool, bool> catch_totem(int player_id)
     {
+        Player &player = get_player(player_id);
         auto cards_repeats = count_cards_repeats();
-        Player player = get_player(client_fd);
         bool should_catch = cards_repeats[player.top_card] > 1;
 
         if (!totem_held)
@@ -124,12 +127,16 @@ private:
 
         for (const auto &player : players)
         {
+            if (player.top_card == EMPTY_CARD)
+            {
+                continue;
+            }
             ++cards_repeats[player.top_card];
         }
         return cards_repeats;
     }
 
-    Player get_player(int client_fd)
+    Player &get_player(int client_fd)
     {
 
         auto it = std::find_if(players.begin(), players.end(), [client_fd](const Player &p)
@@ -146,9 +153,10 @@ class JungleSpeedServer
 {
     int server_fd;
     sockaddr_in server_addr;
-    // <client_fd, Player>
+
     // <game_number, game_obj>
     std::unordered_map<int, Game> games;
+
     // <client_fd, game_obj_with_player>
     std::unordered_map<int, Game> players_in_games;
     std::vector<Player *> players_out_of_games;
@@ -508,24 +516,24 @@ private:
 
     std::pair<bool, json> turn_card(Player &player)
     {
-        auto player_game_it = games.find(player.fd);
-        if (player_game_it == games.end())
+        auto player_game_it = players_in_games.find(player.fd);
+        if (player_game_it == players_in_games.end())
         {
             json response = {{"error", "Cannot turn card as player is not part of any game."}};
             return make_pair(false, response);
         }
 
-        std::string card = player_game_it->second.turn_card();
+        std::string card = player_game_it->second.turn_card(player.fd);
         json response = {
-            {"card", (card == "") ? NULL : card},
+            {"card", (card == EMPTY_CARD) ? NULL : card},
         };
         return make_pair(true, response);
     }
 
     std::pair<bool, json> catch_totem(Player &player)
     {
-        auto player_game_it = games.find(player.fd);
-        if (player_game_it == games.end())
+        auto player_game_it = players_in_games.find(player.fd);
+        if (player_game_it == players_in_games.end())
         {
             json response = {{"error", "Cannot catch the totem as player is not part of any game."}};
             return make_pair(false, response);
