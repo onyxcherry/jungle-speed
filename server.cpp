@@ -323,7 +323,8 @@ private:
         }
         catch (json::parse_error &e)
         {
-            send_error(player, "Invalid JSON format.");
+            json error_response = {{"error", "Invalid JSON format."}};
+            send_error(player, "UNKNOWN", error_response);
         }
     }
 
@@ -390,17 +391,26 @@ private:
         }
     }
 
-    void send_error(Player &player, const std::string &error_message)
+    void send_success(Player &player, const std::string &response_to, json &response)
     {
-        json response = {{"error", error_message}};
+        response["response"] = response_to;
+        response["success"] = true;
         add_message_to_buffer_to_send(player, response);
+    }
+
+    void send_error(Player &player, const std::string &response_to, json &error_response)
+    {
+        error_response["response"] = response_to;
+        error_response["success"] = false;
+        add_message_to_buffer_to_send(player, error_response);
     }
 
     void process_client_message(Player &player, const json &message)
     {
         if (!message.contains("action"))
         {
-            send_error(player, "Missing 'action' field.");
+            json error_response = {{"error", "Missing 'action' field."}};
+            send_error(player, "UNKNOWN", error_response);
             return;
         }
 
@@ -409,37 +419,41 @@ private:
 
         if (action == "LIST_GAMES")
         {
-            const json message = list_games();
-            add_message_to_buffer_to_send(player, message);
+            json response = list_games();
+            send_success(player, action, response);
         }
         else if (action == "CREATE_GAME")
         {
-            const json message = create_game();
-            add_message_to_buffer_to_send(player, message);
+            json response = create_game();
+            send_success(player, action, response);
         }
         else if (action == "JOIN_GAME")
         {
-            join_game(player, message);
+            auto [success, response] = join_game(player, message);
+            (success) ? send_success(player, action, response) : send_error(player, action, response);
         }
         else if (action == "TURN_CARD")
         {
-            turn_card(player);
+            auto [success, response] = turn_card(player);
+            (success) ? send_success(player, action, response) : send_error(player, action, response);
         }
         else if (action == "CATCH_TOTEM")
         {
-            catch_totem(player);
+            auto [success, response] = catch_totem(player);
+            (success) ? send_success(player, action, response) : send_error(player, action, response);
         }
         else
         {
-            send_error(player, "Unknown action.");
+            json error_response = {{"error", "Unknown action."}};
+            send_error(player, "UNKNOWN", error_response);
         }
     }
 
     json list_games()
     {
-        json response;
-        response["action"] = "LIST_GAMES";
-        response["games"] = json::array();
+        json response = {
+            {"games", json::array()},
+        };
 
         for (const auto &pair : games)
         {
@@ -457,60 +471,70 @@ private:
         int game_id = next_game_id++;
         Game game(game_id);
         games.insert(std::make_pair(game_id, game));
-        json response = {{"action", "CREATE_GAME"}, {"game_id", game_id}};
+        json response = {{"game_id", game_id}};
         return response;
     }
 
-    void join_game(Player &player, const json &message)
+    std::pair<bool, json> join_game(Player &player, const json &message)
     {
         if (!message.contains("game_id"))
         {
-            send_error(player, "Missing 'game_id' field.");
-            return;
+            json response = {{"error", "Missing 'game_id' field."}};
+            return make_pair(false, response);
         }
 
         int game_id = message["game_id"];
         if (games.find(game_id) == games.end())
         {
-            send_error(player, "Game not found.");
-            return;
+            json response = {{"error", "Game not found."}};
+            return make_pair(false, response);
         }
 
         Game game = games.at(game_id);
         if (game.has_been_started())
         {
-            send_error(player, "Game already started.");
-            return;
+            json response = {{"error"}, {"Game already started."}};
+            return make_pair(false, response);
         }
+
         game.add_player(player);
-        json response = {{"action", "JOIN_GAME"}, {"game_id", game_id}};
-        add_message_to_buffer_to_send(player, response);
+        json response = {{"game_id", game_id}};
+        return make_pair(true, response);
     }
 
-    void turn_card(Player &player)
+    std::pair<bool, json> turn_card(Player &player)
     {
         auto player_game_it = games.find(player.fd);
         if (player_game_it == games.end())
         {
-            send_error(player, "Cannot turn card as player is not part of any game.");
+            json response = {{"error", "Cannot turn card as player is not part of any game."}};
+            return make_pair(false, response);
         }
+
         std::string card = player_game_it->second.turn_card();
-        json response = {{"result", "TURN_CARD"}, {"card", (card == "") ? NULL : card}};
-        add_message_to_buffer_to_send(player, response);
+        json response = {
+            {"card", (card == "") ? NULL : card},
+        };
+        return make_pair(true, response);
     }
 
-    void catch_totem(Player &player)
+    std::pair<bool, json> catch_totem(Player &player)
     {
         auto player_game_it = games.find(player.fd);
         if (player_game_it == games.end())
         {
-            send_error(player, "Cannot catch the totem as player is not part of any game.");
+            json response = {{"error", "Cannot catch the totem as player is not part of any game."}};
+            return make_pair(false, response);
         }
 
         auto [caught, should_catch] = player_game_it->second.catch_totem(player.fd);
+
         // TODO: add bussiness logic of result of catching totem depending on battle or should (not) catch
-        json response = {{"result", "CATCH_TOTEM"}, {"caught", caught}};
-        add_message_to_buffer_to_send(player, response);
+
+        json response = {
+            {"caught", caught},
+        };
+        return make_pair(true, response);
     }
 };
 
