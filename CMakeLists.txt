@@ -1,6 +1,8 @@
 project(JungleSpeed)
 cmake_minimum_required(VERSION 3.1)
 
+set (CMAKE_CXX_STANDARD 17)
+
 find_package(nlohmann_json CONFIG REQUIRED)
 
 add_executable(JungleSpeedServer server.cpp)
