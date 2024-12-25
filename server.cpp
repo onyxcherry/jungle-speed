@@ -12,6 +12,7 @@
 #include <ctime>
 #include <stdexcept>
 #include <algorithm>
+#include <memory>
 
 #define MAX_EVENTS 10
 #define BUFFER_SIZE 1024
@@ -33,12 +34,17 @@ struct Player
     std::chrono::time_point<std::chrono::steady_clock> last_action;
     std::vector<char> msg_in{};
     std::vector<char> msg_out{};
+
+    void show_state()
+    {
+        std::cout << "Player (" << fd << ") " << username << " (" << ((active) ? "active" : "not active") << ")" << std::endl;
+    }
 };
 
 class Game
 {
     int id;
-    std::vector<Player> players{};
+    std::vector<std::shared_ptr<Player>> players{};
     bool is_started = false;
     std::vector<std::string> cards_in_play{};
     bool totem_held = false;
@@ -55,11 +61,11 @@ public:
         return is_started;
     }
 
-    bool add_player(Player &player)
+    bool add_player(std::shared_ptr<Player> &player_ptr)
     {
         if (!has_been_started())
         {
-            players.push_back(player);
+            players.push_back(std::move(player_ptr));
             return true;
         }
         return false;
@@ -86,19 +92,19 @@ public:
         {
             return EMPTY_CARD;
         }
-        Player &player = get_player(player_id);
+        std::shared_ptr<Player> &player = get_player(player_id);
         std::string turned_up_card = cards_in_play.back();
         cards_in_play.pop_back();
-        player.top_card = turned_up_card;
+        player->top_card = turned_up_card;
         return turned_up_card;
     }
 
     // pair<caught_successfully, should_catch>
     std::pair<bool, bool> catch_totem(int player_id)
     {
-        Player &player = get_player(player_id);
+        std::shared_ptr<Player> &player = get_player(player_id);
         auto cards_repeats = count_cards_repeats();
-        bool should_catch = cards_repeats[player.top_card] > 1;
+        bool should_catch = cards_repeats[player->top_card] > 1;
 
         if (!totem_held)
         {
@@ -106,6 +112,17 @@ public:
             return std::make_pair(true, should_catch);
         }
         return std::make_pair(false, should_catch);
+    }
+
+    std::shared_ptr<Player> &get_player(int client_fd)
+    {
+        auto it = std::find_if(players.begin(), players.end(), [client_fd](const std::shared_ptr<Player> &p)
+                               { return p->fd == client_fd; });
+        if (it == players.end())
+        {
+            throw std::runtime_error("Cannot find player in this game!");
+        }
+        return *it;
     }
 
 private:
@@ -127,25 +144,13 @@ private:
 
         for (const auto &player : players)
         {
-            if (player.top_card == EMPTY_CARD)
+            if (player->top_card == EMPTY_CARD)
             {
                 continue;
             }
-            ++cards_repeats[player.top_card];
+            ++cards_repeats[player->top_card];
         }
         return cards_repeats;
-    }
-
-    Player &get_player(int client_fd)
-    {
-
-        auto it = std::find_if(players.begin(), players.end(), [client_fd](const Player &p)
-                               { return p.fd == client_fd; });
-        if (it == players.end())
-        {
-            throw std::runtime_error("Cannot find player in this game!");
-        }
-        return *it;
     }
 };
 
@@ -157,9 +162,9 @@ class JungleSpeedServer
     // <game_number, game_obj>
     std::unordered_map<int, Game> games;
 
-    // <client_fd, game_obj_with_player>
-    std::unordered_map<int, Game> players_in_games;
-    std::vector<Player *> players_out_of_games;
+    // <client_fd, game_number>
+    std::unordered_map<int, int> players_in_games;
+    std::vector<std::shared_ptr<Player>> players_out_of_games;
     int next_game_id = 1;
     int next_player_id = 1;
     int epoll_fd;
@@ -278,8 +283,7 @@ private:
             perror("Accept failed");
             return;
         }
-        // TODO: std::unique_ptr<Player> player(new Player{});
-        Player *player = new Player{};
+        std::shared_ptr<Player> player = std::make_shared<Player>();
         player->fd = client_fd;
         player->username = "Player" + std::to_string(next_player_id++);
         player->last_action = std::chrono::steady_clock::now();
@@ -287,7 +291,7 @@ private:
 
         epoll_event event;
         event.events = EPOLLIN;
-        event.data.ptr = player;
+        event.data.ptr = player.get();
 
         if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &event) == -1)
         {
@@ -507,9 +511,10 @@ private:
             return make_pair(false, response);
         }
 
+        auto player_ptr = get_unbound_player(player.fd);
+        players_in_games.insert(std::make_pair(player.fd, game.get_identifier()));
+        game.add_player(player_ptr);
         remove_player_from_waiting_list(player.fd);
-        players_in_games.insert(std::make_pair(player.fd, game));
-        game.add_player(player);
         json response = {{"game_id", game_id}};
         return make_pair(true, response);
     }
@@ -523,7 +528,8 @@ private:
             return make_pair(false, response);
         }
 
-        std::string card = player_game_it->second.turn_card(player.fd);
+        Game &game = games.at(player_game_it->second);
+        std::string card = game.turn_card(player.fd);
         json response = {
             {"card", (card == EMPTY_CARD) ? NULL : card},
         };
@@ -539,7 +545,8 @@ private:
             return make_pair(false, response);
         }
 
-        auto [caught, should_catch] = player_game_it->second.catch_totem(player.fd);
+        Game &game = games.at(player_game_it->second);
+        auto [caught, should_catch] = game.catch_totem(player.fd);
 
         // TODO: add bussiness logic of result of catching totem depending on battle or should (not) catch
 
@@ -552,9 +559,20 @@ private:
     void remove_player_from_waiting_list(int client_fd)
     {
         players_out_of_games.erase(
-            std::remove_if(players_out_of_games.begin(), players_out_of_games.end(), [client_fd](Player const *player)
+            std::remove_if(players_out_of_games.begin(), players_out_of_games.end(), [client_fd](std::shared_ptr<Player> const player)
                            { return player->fd == client_fd; }),
             players_out_of_games.end());
+    }
+
+    std::shared_ptr<Player> get_unbound_player(int client_fd)
+    {
+        auto it = std::find_if(players_out_of_games.begin(), players_out_of_games.end(), [client_fd](const std::shared_ptr<Player> &p)
+                               { return p->fd == client_fd; });
+        if (it == players_out_of_games.end())
+        {
+            throw std::runtime_error("Cannot find player unbound to any game!");
+        }
+        return *it;
     }
 };
 
