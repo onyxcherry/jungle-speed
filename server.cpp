@@ -504,6 +504,13 @@ private:
             return make_pair(false, response);
         }
 
+        int player_fd_searched_for = player.fd;
+        if (players_in_games.find(player_fd_searched_for) != players_in_games.end())
+        {
+            json response = {{"error", "Already joined to this game."}};
+            return make_pair(false, response);
+        }
+
         Game &game = games.at(game_id);
         if (game.has_been_started())
         {
@@ -511,7 +518,15 @@ private:
             return make_pair(false, response);
         }
 
-        auto player_ptr = get_unbound_player(player.fd);
+        auto player_it = std::find_if(players_out_of_games.begin(), players_out_of_games.end(), [player_fd_searched_for](const std::shared_ptr<Player> &p)
+                                      { return p->fd == player_fd_searched_for; });
+        if (player_it == players_out_of_games.end())
+        {
+            json response = {{"error", "Cannot find the player."}};
+            return make_pair(false, response);
+        }
+        auto player_ptr = *player_it;
+
         players_in_games.insert(std::make_pair(player.fd, game.get_identifier()));
         game.add_player(player_ptr);
         remove_player_from_waiting_list(player.fd);
@@ -562,17 +577,6 @@ private:
             std::remove_if(players_out_of_games.begin(), players_out_of_games.end(), [client_fd](std::shared_ptr<Player> const player)
                            { return player->fd == client_fd; }),
             players_out_of_games.end());
-    }
-
-    std::shared_ptr<Player> get_unbound_player(int client_fd)
-    {
-        auto it = std::find_if(players_out_of_games.begin(), players_out_of_games.end(), [client_fd](const std::shared_ptr<Player> &p)
-                               { return p->fd == client_fd; });
-        if (it == players_out_of_games.end())
-        {
-            throw std::runtime_error("Cannot find player unbound to any game!");
-        }
-        return *it;
     }
 };
 
