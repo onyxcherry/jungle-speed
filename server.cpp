@@ -13,6 +13,7 @@
 #include <stdexcept>
 #include <algorithm>
 #include <memory>
+#include <random>
 
 #define MAX_EVENTS 10
 #define BUFFER_SIZE 1024
@@ -46,14 +47,13 @@ class Game
     int id;
     std::vector<std::shared_ptr<Player>> players{};
     bool is_started = false;
-    std::vector<std::string> cards_in_play{};
+    std::vector<std::string> cards_in_the_middle{};
     bool totem_held = false;
 
 public:
     Game(int game_id) // : id(game_id)
     {
         id = game_id;
-        cards_in_play = generate_cards();
     }
 
     bool has_been_started() const
@@ -83,6 +83,18 @@ public:
 
     void start()
     {
+        std::vector<std::string> deck = generate_cards();
+        auto rng = std::default_random_engine{};
+        std::shuffle(deck.begin(), deck.end(), rng);
+
+        for (const std::string &card : deck)
+        {
+            for (const auto &player : players)
+            {
+                player->cards_facing_up.push_back(card);
+            }
+        }
+
         is_started = true;
     }
 
@@ -128,6 +140,7 @@ public:
 private:
     std::vector<std::string> generate_cards(int n = 70)
     {
+        // TODO; assert that no more than 2 same cards exist
         return std::vector<std::string>{
             "quadruple_mobius_strip_yellow",
             "quadruple_mobius_strip_purple",
