@@ -255,7 +255,7 @@ class JungleSpeedServer
     sockaddr_in server_addr;
 
     // <game_number, game_obj>
-    std::unordered_map<int, Game> games;
+    std::unordered_map<int, std::shared_ptr<Game>> games;
 
     // <client_fd, game_number>
     std::unordered_map<int, int> players_in_games;
@@ -566,7 +566,7 @@ private:
 
         for (const auto &pair : games)
         {
-            const Game &game = pair.second;
+            const Game &game = *pair.second;
             json game_info = {{"game_id", game.get_identifier()},
                               {"player_count", game.get_players_count()},
                               {"is_started", game.has_been_started()}};
@@ -575,13 +575,20 @@ private:
         return response;
     }
 
-    json create_game()
+    std::pair<bool, json> create_game()
     {
+        int games_count = games.size();
+        if (games_count >= MAX_GAMES_COUNT)
+        {
+            json response = {{"error", "Max games count limit hit."}};
+            return make_pair(false, response);
+        }
         int game_id = next_game_id++;
-        Game game(game_id);
-        games.insert(std::make_pair(game_id, game));
+
+        std::shared_ptr game_ptr = std::make_shared<Game>(game_id);
+        games.insert(std::make_pair(game_id, game_ptr));
         json response = {{"game_id", game_id}};
-        return response;
+        return make_pair(true, response);
     }
 
     std::pair<bool, json> join_game(Player &player, const json &message)
@@ -606,10 +613,12 @@ private:
             return make_pair(false, response);
         }
 
-        Game &game = games.at(game_id);
+        Game &game = *games.at(game_id);
         if (game.has_been_started())
         {
-            json response = {{"error"}, {"Game already started."}};
+            json response = {{"error", "Game already started."}};
+            return make_pair(false, response);
+        }
             return make_pair(false, response);
         }
 
@@ -638,6 +647,7 @@ private:
             return make_pair(false, response);
         }
 
+        Game &game = *games.at(player_game_it->second);
         if (!game.has_been_started())
         {
             json response = {{"error", "Cannot turn card as the game has not been started."}};
@@ -658,8 +668,12 @@ private:
             return make_pair(false, response);
         }
 
-        Game &game = games.at(player_game_it->second);
-        auto [caught, should_catch] = game.catch_totem(player.fd);
+        Game &game = *games.at(player_game_it->second);
+        if (!game.has_been_started())
+        {
+            json response = {{"error", "Cannot catch the totem as the game has not been started."}};
+            return make_pair(false, response);
+        }
 
         // TODO: add bussiness logic of result of catching totem depending on battle or should (not) catch
 
