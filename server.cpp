@@ -24,6 +24,7 @@
 
 const std::string msg_end_marker = "\t\t";
 const std::string EMPTY_CARD = "";
+int epoll_fd;
 
 using json = nlohmann::json;
 
@@ -39,6 +40,8 @@ struct Player
     std::chrono::time_point<std::chrono::steady_clock> last_action;
     std::vector<char> msg_in{};
     std::vector<char> msg_out{};
+    std::mutex msg_mtx;
+
     std::string turn_card()
     {
         if (cards_facing_up.size() == 0)
@@ -99,6 +102,11 @@ public:
             return true;
         }
         return false;
+    }
+
+    std::vector<std::shared_ptr<Player>> &get_players_to_be_informed()
+    {
+        return players;
     }
 
     int get_identifier() const
@@ -262,7 +270,6 @@ class JungleSpeedServer
     std::vector<std::shared_ptr<Player>> players_out_of_games;
     int next_game_id = 1;
     int next_player_id = 1;
-    int epoll_fd;
     int SERVER_PTR = 1;
 
     const std::string ip_address;
@@ -483,9 +490,10 @@ private:
     //     send(player.fd, serialized_message.c_str(), serialized_message.size(), 0);
     // }
 
-    void add_message_to_buffer_to_send(Player &player, const json &message)
+    static void add_message_to_buffer_to_send(Player &player, const json &message)
     {
         std::string serialized_message = message.dump();
+        std::lock_guard<std::mutex> lock(player.msg_mtx);
         player.msg_out.insert(player.msg_out.end(), serialized_message.begin(), serialized_message.end());
 
         epoll_event event;
@@ -512,6 +520,21 @@ private:
         error_response["response"] = response_to;
         error_response["success"] = false;
         add_message_to_buffer_to_send(player, error_response);
+    }
+
+    static void send_game_update(Player &player, const std::string &code, json &message)
+    {
+        message["type"] = "GAME_UPDATE";
+        message["code"] = code;
+        add_message_to_buffer_to_send(player, message);
+    };
+
+    static void send_to_all(std::vector<std::shared_ptr<Player>> &players, const std::string &code, json &message)
+    {
+        for (const auto &player : players)
+        {
+            send_game_update(*player, code, message);
+        }
     }
 
     void process_client_message(Player &player, const json &message)
