@@ -232,6 +232,18 @@ public:
         return *it;
     }
 
+    int get_loser_id(std::string current_card, int winner_id)
+    {
+        for (const auto &player : players)
+        {
+            if (player->top_card == current_card && player->fd != winner_id)
+            {
+                return player->fd;
+            }
+        }
+        throw std::runtime_error("Loser id not found!");
+    }
+
 private:
     std::vector<std::string> generate_cards(int n = 70)
     {
@@ -583,6 +595,58 @@ private:
         {
             json error_response = {{"error", "Unknown action."}};
             send_error(player, "UNKNOWN", error_response);
+        }
+    }
+
+    void start_game(Game &game)
+    {
+        game.start();
+        std::thread t{run, std::ref(game)};
+        t.detach();
+    }
+
+    static void run(Game &game)
+    {
+        std::cout << "Run się odpala" << std::endl;
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<int> dont_repeat(3000, 3500);
+        int notrep_sleeping_duration_ms = dont_repeat(gen);
+
+        json start_info = {};
+        send_to_all(game.get_players_to_be_informed(), "START", start_info);
+
+        while (true)
+        {
+            Player &current_turn_player = game.get_current_turn_player();
+            json response = json::object();
+            send_game_update(current_turn_player, "CAN_TURN_CARD", response);
+            std::string current_card;
+            {
+                // TODO: does not work :(
+                std::unique_lock next_card_lock(game.next_card_mtx);
+                game.next_card_cv->wait(next_card_lock, [&game]()
+                                        { return game.if_next_card_turned_up(); });
+
+                auto [seq, player_id, card] = game.get_last_made_turn();
+                current_card = card;
+                json turned_card_message = {{"by", player_id},
+                                            {"card", card}};
+                send_to_all(game.get_players_to_be_informed(), "TURNED_CARD", turned_card_message);
+            }
+
+            std::unique_lock totem_lock(game.totem_mtx);
+            if (game.cards_repeat() && game.totem_cv->wait_for(totem_lock, std::chrono::seconds(5), [&game]()
+                                                               { return game.is_totem_held(); }))
+            {
+                int loser_id = game.get_loser_id(current_card, game.get_player_holder_id());
+                // TODO: implement rest of logic for loser
+            }
+            else
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(notrep_sleeping_duration_ms));
+            }
+            game.next_turn();
         }
     }
 
