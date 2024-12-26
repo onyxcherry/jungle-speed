@@ -668,6 +668,13 @@ private:
         game.add_player(player_ptr);
         remove_player_from_waiting_list(player.fd);
         json response = {{"game_id", game_id}};
+
+        // TODO: explicitly starting by first player in the game
+        if (players_count + 1 == PLAYERS_COUNT_THRESHOLD)
+        {
+            start_game(game);
+        }
+
         return make_pair(true, response);
     }
 
@@ -708,12 +715,23 @@ private:
             return make_pair(false, response);
         }
 
-        // TODO: add bussiness logic of result of catching totem depending on battle or should (not) catch
+        if (game.totem_mtx.try_lock())
+        {
+            bool caught = game.catch_totem(player.fd);
+            if (caught)
+            {
+                json message = {
+                    {"caught", caught},
+                    {"by", player.fd},
+                };
+                send_to_all(game.get_players_to_be_informed(), "TOTEM", message);
+            }
+            return make_pair(caught, json::object());
+        }
 
-        json response = {
-            {"caught", caught},
-        };
-        return make_pair(true, response);
+        // TODO: add bussiness logic of result of catching totem depending on battle or should (not) catch
+        json response = {{"TODO", "TODO"}};
+        return make_pair(false, response);
     }
 
     void remove_player_from_waiting_list(int client_fd)
