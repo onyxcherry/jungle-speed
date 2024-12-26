@@ -13,7 +13,11 @@
 #include <stdexcept>
 #include <algorithm>
 #include <memory>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
 #include <random>
+#include <tuple>
 
 #define MAX_EVENTS 10
 #define BUFFER_SIZE 1024
@@ -35,10 +39,24 @@ struct Player
     std::chrono::time_point<std::chrono::steady_clock> last_action;
     std::vector<char> msg_in{};
     std::vector<char> msg_out{};
-
-    void show_state()
+    std::string turn_card()
     {
-        std::cout << "Player (" << fd << ") " << username << " (" << ((active) ? "active" : "not active") << ")" << std::endl;
+        if (cards_facing_up.size() == 0)
+        {
+            if (cards_facing_down.size() == 0)
+            {
+                // player won!
+                // Should be handled by other code (before)
+                return EMPTY_CARD;
+            }
+            auto rng = std::default_random_engine{};
+            std::shuffle(cards_facing_down.begin(), cards_facing_down.end(), rng);
+            std::move(cards_facing_down.begin(), cards_facing_down.end(), std::back_inserter(cards_facing_up));
+        }
+        std::string card = cards_facing_up.back();
+        cards_facing_up.pop_back();
+        top_card = card;
+        return card;
     }
 };
 
@@ -49,8 +67,20 @@ class Game
     bool is_started = false;
     std::vector<std::string> cards_in_the_middle{};
     bool totem_held = false;
+    int totem_held_by = 0;
+    int player_idx_turn = 0;
+    // <seq, player_id, card>
+    std::vector<std::tuple<int, int, std::string>> made_turns{};
+    bool can_turn_up_next_card = true;
+    bool next_card_turned_up = false;
+    std::unordered_map<std::string, int> cards_repeats{};
 
 public:
+    std::mutex totem_mtx;
+    std::unique_ptr<std::condition_variable> totem_cv;
+    std::mutex next_card_mtx;
+    std::unique_ptr<std::condition_variable> next_card_cv;
+
     Game(int game_id) // : id(game_id)
     {
         id = game_id;
@@ -98,32 +128,84 @@ public:
         is_started = true;
     }
 
-    std::string turn_card(int player_id)
+    int get_turn()
     {
-        if (cards_in_play.size() == 0)
-        {
-            return EMPTY_CARD;
-        }
-        std::shared_ptr<Player> &player = get_player(player_id);
-        std::string turned_up_card = cards_in_play.back();
-        cards_in_play.pop_back();
-        player->top_card = turned_up_card;
-        return turned_up_card;
+        return player_idx_turn;
     }
 
-    // pair<caught_successfully, should_catch>
-    std::pair<bool, bool> catch_totem(int player_id)
+    bool if_next_card_turned_up() const
+    {
+        return next_card_turned_up;
+    }
+
+    std::tuple<int, int, std::string> get_last_made_turn()
+    {
+        return made_turns.back();
+    }
+
+    void next_turn()
+    {
+        next_card_turned_up = false;
+        player_idx_turn = (player_idx_turn + 1) % get_players_count();
+    }
+
+    Player &get_current_turn_player()
+    {
+        return *get_players_to_be_informed()[get_turn()];
+    }
+
+    void turn_card(int player_id)
     {
         std::shared_ptr<Player> &player = get_player(player_id);
-        auto cards_repeats = count_cards_repeats();
-        bool should_catch = cards_repeats[player->top_card] > 1;
+        {
+            std::lock_guard<std::mutex> lock(next_card_mtx);
+            std::string turned_up_card = player->turn_card();
+            next_card_turned_up = true;
+            add_made_turn(player_id, turned_up_card);
+            cards_repeats = count_cards_repeats();
+        }
+        next_card_cv->notify_one();
+    }
+
+    void add_made_turn(int player_id, std::string &card)
+    {
+        int seq = made_turns.size() + 1;
+        auto turned = std::make_tuple(seq, player_id, card);
+        made_turns.push_back(turned);
+    }
+
+    bool cards_repeat()
+    {
+        return std::any_of(cards_repeats.begin(), cards_repeats.end(), [](const auto &pair)
+                           { return pair.second >= 2; });
+    }
+
+    bool is_totem_held() const
+    {
+        return totem_held;
+    }
+
+    int get_player_holder_id() const
+    {
+        return totem_held_by;
+    }
+
+    bool catch_totem(int player_id)
+    {
+        if (!next_card_mtx.try_lock())
+        {
+            // TODO: totem not caught due to current card changing.
+            return false;
+        }
 
         if (!totem_held)
         {
             totem_held = true;
-            return std::make_pair(true, should_catch);
+            totem_held_by = player_id;
+            totem_cv->notify_one();
+            return true;
         }
-        return std::make_pair(false, should_catch);
+        return false;
     }
 
     std::shared_ptr<Player> &get_player(int client_fd)
@@ -556,11 +638,14 @@ private:
             return make_pair(false, response);
         }
 
-        Game &game = games.at(player_game_it->second);
-        std::string card = game.turn_card(player.fd);
-        json response = {
-            {"card", (card == EMPTY_CARD) ? NULL : card},
-        };
+        if (!game.has_been_started())
+        {
+            json response = {{"error", "Cannot turn card as the game has not been started."}};
+            return make_pair(false, response);
+        }
+
+        game.turn_card(player.fd);
+        json response = json::object();
         return make_pair(true, response);
     }
 
