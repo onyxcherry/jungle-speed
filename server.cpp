@@ -24,6 +24,11 @@
 
 const std::string msg_end_marker = "\t\t";
 const std::string EMPTY_CARD = "";
+
+const int PLAYERS_COUNT_THRESHOLD = 6;
+const int MAX_PLAYERS_COUNT = 8;
+const int MAX_GAMES_COUNT = 10;
+
 int epoll_fd;
 
 using json = nlohmann::json;
@@ -556,8 +561,8 @@ private:
         }
         else if (action == "CREATE_GAME")
         {
-            json response = create_game();
-            send_success(player, action, response);
+            auto [success, response] = create_game();
+            (success) ? send_success(player, action, response) : send_error(player, action, response);
         }
         else if (action == "JOIN_GAME")
         {
@@ -642,6 +647,11 @@ private:
             json response = {{"error", "Game already started."}};
             return make_pair(false, response);
         }
+
+        int players_count = game.get_players_count();
+        if (players_count >= MAX_PLAYERS_COUNT)
+        {
+            json response = {{"error", "Max players count limit hit."}};
             return make_pair(false, response);
         }
 
