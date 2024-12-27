@@ -109,14 +109,17 @@ struct Player
 class Game
 {
     int id;
-    std::vector<std::shared_ptr<Player>> players{};
+    // <player fd, Player object>; needs to be ordered!
+    std::map<int, std::shared_ptr<Player>> players{};
     bool is_started = false;
     std::vector<std::string> cards_in_the_middle{};
     int totem_held_by = NO_TOTEM_HOLDER;
-    int player_idx_turn = 0;
+
+    // TODO: make the variable atomic
+    // player fd
+    int player_id_turn;
     // <seq, player_id, card>
     std::vector<std::tuple<int, int, std::string>> made_turns{};
-    bool can_turn_up_next_card = true;
     bool next_card_turned_up = false;
     std::unordered_map<std::string, int> cards_repeats{};
 
@@ -144,15 +147,20 @@ public:
     {
         if (!has_been_started())
         {
-            players.push_back(std::move(player_ptr));
+            players.insert(make_pair(player_ptr->fd, std::move(player_ptr)));
             return true;
         }
         return false;
     }
 
-    std::vector<std::shared_ptr<Player>> &get_players_to_be_informed()
+    std::vector<std::shared_ptr<Player>> &get_players()
     {
-        return players;
+        std::vector<std::shared_ptr<Player>> players_to_return{};
+        for (const auto &p : players)
+        {
+            players_to_return.push_back(p.second);
+        }
+        return players_to_return;
     }
 
     int get_identifier() const
@@ -171,15 +179,21 @@ public:
         auto rng = std::default_random_engine{};
         std::shuffle(deck.begin(), deck.end(), rng);
 
+        int i = 0;
         for (const std::string &card : deck)
         {
-            for (const auto &player : players)
-            {
-                player->cards_facing_up.push_back(card);
-            }
+            players[i]->cards_facing_up.push_back(card);
+            i = ++i % players.size();
         }
+        auto players_list = get_players();
+        set_turn_of(players_list[0]->fd);
 
         is_started = true;
+
+        for (const auto &player : get_players())
+        {
+            std::cout << player->get_state() << std::endl;
+        }
     }
 
     bool if_next_card_turned_up() const
@@ -195,12 +209,19 @@ public:
     void next_turn()
     {
         next_card_turned_up = false;
-        player_idx_turn = (player_idx_turn + 1) % get_players_count();
+        auto current_player_turn = players.find(player_id_turn);
+        ++current_player_turn;
+        player_id_turn = current_player_turn->first;
     }
 
     Player &get_current_turn_player()
     {
-        return *players[player_idx_turn];
+        return *players[player_id_turn];
+    }
+
+    void set_turn_of(int player_id)
+    {
+        player_id_turn = player_id;
     }
 
     void turn_card(int player_id)
@@ -216,11 +237,9 @@ public:
         next_card_cv->notify_one();
     }
 
-    void add_made_turn(int player_id, std::string &card)
+    int get_middle_cards_count() const
     {
-        int seq = made_turns.size() + 1;
-        auto turned = std::make_tuple(seq, player_id, card);
-        made_turns.push_back(turned);
+        return cards_in_the_middle.size();
     }
 
     bool cards_repeat()
@@ -259,18 +278,8 @@ public:
 
     std::shared_ptr<Player> &get_player(int client_fd)
     {
-        auto it = std::find_if(players.begin(), players.end(), [client_fd](const std::shared_ptr<Player> &p)
-                               { return p->fd == client_fd; });
-        if (it == players.end())
-        {
-            throw std::runtime_error("Cannot find player in this game!");
-        }
-        return *it;
+        return players.at(client_fd);
     }
-
-    int get_loser_id(std::string current_card, int winner_id)
-    {
-        for (const auto &player : players)
         {
             if (player->top_card == current_card && player->fd != winner_id)
             {
@@ -307,6 +316,13 @@ private:
             ++cards_repeats[player->get_top_card()];
         }
         return cards_repeats;
+    }
+
+    void add_made_turn(int player_id, std::string &card)
+    {
+        int seq = made_turns.size() + 1;
+        auto turned = std::make_tuple(seq, player_id, card);
+        made_turns.push_back(turned);
     }
 };
 
