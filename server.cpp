@@ -280,13 +280,68 @@ public:
     {
         return players.at(client_fd);
     }
+
+    std::vector<std::shared_ptr<Player>> get_losers(std::string current_card, int winner_id)
+    {
+        std::vector<std::shared_ptr<Player>> losers{};
+        for (const auto &player : get_players())
         {
-            if (player->top_card == current_card && player->fd != winner_id)
+            if (player->get_top_card() == current_card && player->fd != winner_id)
             {
-                return player->fd;
+                losers.push_back(player);
             }
         }
-        throw std::runtime_error("Loser id not found!");
+    }
+
+    void transfer_cards_to_losers(std::string current_card, int winner_id)
+    {
+        std::vector<std::shared_ptr<Player>> losers = get_losers(current_card, winner_id);
+
+        std::vector<std::string> cards_to_be_distributed{};
+        Player &winner = *get_player(winner_id);
+
+        std::move(winner.cards_facing_up.begin(), winner.cards_facing_up.end(), std::back_inserter(cards_to_be_distributed));
+        winner.cards_facing_up.erase(winner.cards_facing_up.begin(), winner.cards_facing_up.end());
+        std::move(cards_in_the_middle.begin(), cards_in_the_middle.end(), std::back_inserter(cards_to_be_distributed));
+        cards_in_the_middle.erase(cards_in_the_middle.begin(), cards_in_the_middle.end());
+
+        auto rng = std::default_random_engine{};
+        std::shuffle(cards_to_be_distributed.begin(), cards_to_be_distributed.end(), rng);
+
+        for (const auto &player : get_players())
+        {
+            std::move(player->cards_facing_up.begin(), player->cards_facing_up.end(), std::back_inserter(player->cards_facing_down));
+            player->cards_facing_up.erase(player->cards_facing_up.begin(), player->cards_facing_up.end());
+        }
+
+        int i = 0;
+        for (const std::string &card : cards_to_be_distributed)
+        {
+            players[i]->cards_facing_down.push_back(card);
+            i = ++i % players.size();
+        }
+    }
+
+    void transfer_cards_facing_up_to_middle(int player_id)
+    {
+        Player &player = *get_player(player_id);
+        std::move(player.cards_facing_up.begin(), player.cards_facing_up.end(), std::back_inserter(cards_in_the_middle));
+        player.cards_facing_up.erase(player.cards_facing_up.begin(), player.cards_facing_up.end());
+    }
+
+    std::pair<bool, json> is_ended()
+    {
+        for (const auto &player : get_players())
+        {
+            std::pair<int, int> cards_counts = player->get_cards_count();
+            if (cards_counts.first == 0 && cards_counts.second == 0)
+            {
+                json message = {{"Winner", player->fd}};
+                return make_pair(true, message);
+            }
+        }
+        json empty_message = json::object();
+        return make_pair(false, empty_message);
     }
 
 private:
