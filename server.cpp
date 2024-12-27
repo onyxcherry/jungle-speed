@@ -758,6 +758,19 @@ private:
             return make_pair(false, response);
         }
 
+        Player &current_turn_player = game.get_current_turn_player();
+        if (player.fd != current_turn_player.fd)
+        {
+            json response = {{"error", "Cannot turn card in other player's turn."}};
+            return make_pair(false, response);
+        }
+
+        if (game.if_next_card_turned_up())
+        {
+            json response = {{"error", "Cannot turn card again."}};
+            return make_pair(false, response);
+        }
+
         game.turn_card(player.fd);
         json response = json::object();
         return make_pair(true, response);
