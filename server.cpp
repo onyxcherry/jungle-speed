@@ -177,14 +177,19 @@ public:
     void start()
     {
         std::vector<std::string> deck = generate_cards();
-        auto rng = std::default_random_engine{};
-        std::shuffle(deck.begin(), deck.end(), rng);
+        // TODO: turn on shuffling cards when all added and good working confirmed
+        // auto rng = std::default_random_engine{};
+        // std::shuffle(deck.begin(), deck.end(), rng);
 
-        int i = 0;
+        auto players_it = players.begin();
         for (const std::string &card : deck)
         {
-            players[i]->cards_facing_up.push_back(card);
-            i = ++i % players.size();
+            players_it->second->cards_facing_down.push_back(card);
+            ++players_it;
+            if (players_it == players.end())
+            {
+                players_it = players.begin();
+            }
         }
         auto players_list = get_players();
         set_turn_of(players_list[0]->fd);
