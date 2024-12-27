@@ -18,6 +18,7 @@
 #include <condition_variable>
 #include <random>
 #include <tuple>
+#include <set>
 
 #define MAX_EVENTS 10
 #define BUFFER_SIZE 1024
@@ -770,14 +771,14 @@ private:
         std::uniform_int_distribution<int> dont_repeat(3000, 3500);
         int notrep_sleeping_duration_ms = dont_repeat(gen);
 
-        json start_info = {};
-        send_to_all(game.get_players_to_be_informed(), "START", start_info);
+        json start_info = json::object();
+        send_to_all(game.get_players(), "START", start_info);
 
         while (true)
         {
             Player &current_turn_player = game.get_current_turn_player();
-            json response = json::object();
-            send_game_update(current_turn_player, "CAN_TURN_CARD", response);
+            json turn_card_pls_msg = json::object();
+            send_game_update(current_turn_player, "CAN_TURN_CARD", turn_card_pls_msg);
             std::string current_card;
             {
                 std::unique_lock next_card_lock(game.next_card_mtx);
@@ -786,25 +787,80 @@ private:
 
                 auto [seq, player_id, card] = game.get_last_made_turn();
                 current_card = card;
-                json turned_card_message = {{"by", player_id},
-                                            {"card", card}};
-                send_to_all(game.get_players_to_be_informed(), "TURNED_CARD", turned_card_message);
+
+                send_turned_card(game.get_players(), player_id, card);
+
+                if (has_outwards_arrows(current_card))
+                {
+                    json one_message = json::object();
+                    std::set<std::string> turned_up_cards;
+                    bool duel = false;
+                    for (const auto &player : game.get_players())
+                    {
+                        std::string card = player->turn_card();
+                        if (turned_up_cards.contains(card))
+                        {
+                            duel = true;
+                        }
+                        turned_up_cards.insert(card);
+                        one_message[player->fd] = card;
+                    }
+                    send_to_all(game.get_players(), "OUTWARDS_ARROWS_TURNED_CARDS", one_message);
+
+                    if (!duel)
+                    {
+                        game.next_turn();
+                        game.set_turn_of(player_id);
+                        send_next_turn(game.get_players(), game.get_current_turn_player().fd);
+                        continue;
+                    }
+                    // TODO: if same symbols, continue executing code below (wait for totem, all other players will be losers!)
+                    // TODO: if not same symbols, continue the loop from the same player
+                }
             }
 
             std::unique_lock totem_lock(game.totem_mtx);
             if (game.cards_repeat() && game.totem_cv->wait_for(totem_lock, std::chrono::seconds(5), [&game]()
                                                                { return game.is_totem_held(); }))
             {
-                int loser_id = game.get_loser_id(current_card, game.get_player_holder_id());
-                // TODO: implement rest of logic for loser
+                int winner_id = game.get_player_holder_id();
+                if (has_inwards_arrows(current_card))
+                {
+                    game.transfer_cards_facing_up_to_middle(winner_id);
+                }
+                else
+                {
+                    game.transfer_cards_to_losers(current_card, winner_id);
+                    std::vector<std::shared_ptr<Player>> losers = game.get_losers(current_card, winner_id);
+                    send_duel_result(game.get_players(), winner_id, losers);
+
+                    game.set_turn_of(losers.back()->fd);
+                }
             }
             else
             {
                 std::this_thread::sleep_for(std::chrono::milliseconds(notrep_sleeping_duration_ms));
             }
+
+            for (auto &player : game.get_players())
+            {
+                send_cards_count(player, game.get_middle_cards_count());
+            }
+
+            std::pair<int, json> game_possible_end = game.is_ended();
+            if (game_possible_end.first)
+            {
+                send_to_all(game.get_players(), "END", game_possible_end.second);
+                break;
+            }
+
             game.put_totem_down();
+            send_totem_down(game.get_players());
+
             game.next_turn();
+            send_next_turn(game.get_players(), game.get_current_turn_player().fd);
         }
+        std::cout << "Game " << game.get_identifier() << " has ended" << std::endl;
     }
 
     json list_games()
