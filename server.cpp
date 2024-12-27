@@ -292,6 +292,7 @@ public:
                 losers.push_back(player);
             }
         }
+        return losers;
     }
 
     void transfer_cards_to_losers(std::string current_card, int winner_id)
