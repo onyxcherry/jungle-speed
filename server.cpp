@@ -661,6 +661,56 @@ private:
         }
     }
 
+    static void send_turned_card(std::vector<std::shared_ptr<Player>> &players, int player_id, std::string card)
+    {
+        json turned_card_msg = {{"by", player_id},
+                                {"card", card}};
+        send_to_all(players, "TURNED_CARD", turned_card_msg);
+    }
+
+    static void send_totem_held(std::vector<std::shared_ptr<Player>> &players, int player_id)
+    {
+        json message = {
+            {"held", true},
+            {"by", player_id},
+        };
+        send_to_all(players, "TOTEM", message);
+    }
+
+    static void send_totem_down(std::vector<std::shared_ptr<Player>> &players)
+    {
+        json totem_down_msg = {{"held", false}};
+        send_to_all(players, "TOTEM", totem_down_msg);
+    }
+
+    static void send_next_turn(std::vector<std::shared_ptr<Player>> &players, int player_id)
+    {
+        json message = {{"next_player", player_id}};
+        send_to_all(players, "NEXT_TURN", message);
+    }
+
+    static void send_cards_count(std::shared_ptr<Player> &player, int in_middle_count)
+    {
+        std::pair<int, int> cards_counts = player->get_cards_count();
+        json message = {
+            {"up", cards_counts.first},
+            {"down", cards_counts.second},
+            {"middle", in_middle_count},
+        };
+        send_game_update(*player, "CARDS_COUNTS", message);
+    }
+
+    static void send_duel_result(std::vector<std::shared_ptr<Player>> &players, int winner_id, std::vector<std::shared_ptr<Player>> losers)
+    {
+        std::vector<int> losers_ids;
+        losers_ids.reserve(losers.size());
+        std::transform(losers.begin(), losers.end(), std::back_inserter(losers_ids),
+                       [](const Player &player)
+                       { return player.fd; });
+        json duel_result_msg = {{"winner", winner_id}, {"losers", losers_ids}};
+        send_to_all(players, "DUEL", duel_result_msg);
+    }
+
     void process_client_message(Player &player, const json &message)
     {
         if (!message.contains("action"))
@@ -906,11 +956,7 @@ private:
         bool caught = game.catch_totem(player.fd);
         if (caught)
         {
-            json message = {
-                {"caught", caught},
-                {"by", player.fd},
-            };
-            send_to_all(game.get_players_to_be_informed(), "TOTEM", message);
+            send_totem_held(game.get_players(), player.fd);
         }
         return make_pair(caught, json::object());
     }
