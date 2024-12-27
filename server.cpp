@@ -154,7 +154,7 @@ public:
         return false;
     }
 
-    std::vector<std::shared_ptr<Player>> &get_players()
+    std::vector<std::shared_ptr<Player>> get_players()
     {
         std::vector<std::shared_ptr<Player>> players_to_return{};
         for (const auto &p : players)
@@ -655,7 +655,7 @@ private:
         add_message_to_buffer_to_send(player, message);
     };
 
-    static void send_to_all(std::vector<std::shared_ptr<Player>> &players, const std::string &code, json &message)
+    static void send_to_all(std::vector<std::shared_ptr<Player>> players, const std::string &code, json &message)
     {
         for (const auto &player : players)
         {
@@ -663,14 +663,14 @@ private:
         }
     }
 
-    static void send_turned_card(std::vector<std::shared_ptr<Player>> &players, int player_id, std::string card)
+    static void send_turned_card(std::vector<std::shared_ptr<Player>> players, int player_id, std::string card)
     {
         json turned_card_msg = {{"by", player_id},
                                 {"card", card}};
         send_to_all(players, "TURNED_CARD", turned_card_msg);
     }
 
-    static void send_totem_held(std::vector<std::shared_ptr<Player>> &players, int player_id)
+    static void send_totem_held(std::vector<std::shared_ptr<Player>> players, int player_id)
     {
         json message = {
             {"held", true},
@@ -679,13 +679,13 @@ private:
         send_to_all(players, "TOTEM", message);
     }
 
-    static void send_totem_down(std::vector<std::shared_ptr<Player>> &players)
+    static void send_totem_down(std::vector<std::shared_ptr<Player>> players)
     {
         json totem_down_msg = {{"held", false}};
         send_to_all(players, "TOTEM", totem_down_msg);
     }
 
-    static void send_next_turn(std::vector<std::shared_ptr<Player>> &players, int player_id)
+    static void send_next_turn(std::vector<std::shared_ptr<Player>> players, int player_id)
     {
         json message = {{"next_player", player_id}};
         send_to_all(players, "NEXT_TURN", message);
@@ -702,13 +702,13 @@ private:
         send_game_update(*player, "CARDS_COUNTS", message);
     }
 
-    static void send_duel_result(std::vector<std::shared_ptr<Player>> &players, int winner_id, std::vector<std::shared_ptr<Player>> losers)
+    static void send_duel_result(std::vector<std::shared_ptr<Player>> players, int winner_id, std::vector<std::shared_ptr<Player>> losers)
     {
         std::vector<int> losers_ids;
         losers_ids.reserve(losers.size());
         std::transform(losers.begin(), losers.end(), std::back_inserter(losers_ids),
-                       [](const Player &player)
-                       { return player.fd; });
+                       [](const std::shared_ptr<Player> &player)
+                       { return player->fd; });
         json duel_result_msg = {{"winner", winner_id}, {"losers", losers_ids}};
         send_to_all(players, "DUEL", duel_result_msg);
     }
