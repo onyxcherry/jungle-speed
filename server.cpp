@@ -85,9 +85,9 @@ class Game
 
 public:
     std::mutex totem_mtx;
-    std::unique_ptr<std::condition_variable> totem_cv;
+    std::unique_ptr<std::condition_variable> totem_cv = std::make_unique<std::condition_variable>();
     std::mutex next_card_mtx;
-    std::unique_ptr<std::condition_variable> next_card_cv;
+    std::unique_ptr<std::condition_variable> next_card_cv = std::make_unique<std::condition_variable>();
 
     Game(int game_id) // : id(game_id)
     {
@@ -623,7 +623,6 @@ private:
             send_game_update(current_turn_player, "CAN_TURN_CARD", response);
             std::string current_card;
             {
-                // TODO: does not work :(
                 std::unique_lock next_card_lock(game.next_card_mtx);
                 game.next_card_cv->wait(next_card_lock, [&game]()
                                         { return game.if_next_card_turned_up(); });
