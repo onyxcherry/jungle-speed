@@ -22,6 +22,8 @@
 #define MAX_EVENTS 10
 #define BUFFER_SIZE 1024
 
+#define NO_TOTEM_HOLDER -1
+
 const std::string msg_end_marker = "\t\t";
 const std::string EMPTY_CARD = "";
 
@@ -74,8 +76,7 @@ class Game
     std::vector<std::shared_ptr<Player>> players{};
     bool is_started = false;
     std::vector<std::string> cards_in_the_middle{};
-    bool totem_held = false;
-    int totem_held_by = 0;
+    int totem_held_by = NO_TOTEM_HOLDER;
     int player_idx_turn = 0;
     // <seq, player_id, card>
     std::vector<std::tuple<int, int, std::string>> made_turns{};
@@ -84,8 +85,12 @@ class Game
     std::unordered_map<std::string, int> cards_repeats{};
 
 public:
+    // changing totem_held_by needs locked totem_mtx
     std::mutex totem_mtx;
     std::unique_ptr<std::condition_variable> totem_cv = std::make_unique<std::condition_variable>();
+
+    // used for signaling that player made the turn in each round
+    // analyzing cards on the table requires totem_mtx to be held!
     std::mutex next_card_mtx;
     std::unique_ptr<std::condition_variable> next_card_cv = std::make_unique<std::condition_variable>();
 
@@ -141,11 +146,6 @@ public:
         is_started = true;
     }
 
-    int get_turn()
-    {
-        return player_idx_turn;
-    }
-
     bool if_next_card_turned_up() const
     {
         return next_card_turned_up;
@@ -164,7 +164,7 @@ public:
 
     Player &get_current_turn_player()
     {
-        return *get_players_to_be_informed()[get_turn()];
+        return *players[player_idx_turn];
     }
 
     void turn_card(int player_id)
@@ -195,7 +195,7 @@ public:
 
     bool is_totem_held() const
     {
-        return totem_held;
+        return totem_held_by != NO_TOTEM_HOLDER;
     }
 
     int get_player_holder_id() const
@@ -205,20 +205,20 @@ public:
 
     bool catch_totem(int player_id)
     {
-        if (!next_card_mtx.try_lock())
+        if (totem_mtx.try_lock() && !is_totem_held())
         {
-            // TODO: totem not caught due to current card changing.
-            return false;
-        }
-
-        if (!totem_held)
-        {
-            totem_held = true;
             totem_held_by = player_id;
             totem_cv->notify_one();
             return true;
         }
         return false;
+    }
+
+    void put_totem_down()
+    {
+        std::lock_guard<std::mutex> lock(totem_mtx);
+        totem_held_by = NO_TOTEM_HOLDER;
+        totem_cv->notify_one();
     }
 
     std::shared_ptr<Player> &get_player(int client_fd)
@@ -645,6 +645,7 @@ private:
             {
                 std::this_thread::sleep_for(std::chrono::milliseconds(notrep_sleeping_duration_ms));
             }
+            game.put_totem_down();
             game.next_turn();
         }
     }
@@ -778,23 +779,20 @@ private:
             return make_pair(false, response);
         }
 
-        if (game.totem_mtx.try_lock())
-        {
-            bool caught = game.catch_totem(player.fd);
-            if (caught)
-            {
-                json message = {
-                    {"caught", caught},
-                    {"by", player.fd},
-                };
-                send_to_all(game.get_players_to_be_informed(), "TOTEM", message);
-            }
-            return make_pair(caught, json::object());
-        }
+        // ? can the totem be caught when a card is changing?
+        // ? any game-bad state possible?
+        // ? despite the player's obvious loss
 
-        // TODO: add bussiness logic of result of catching totem depending on battle or should (not) catch
-        json response = {{"TODO", "TODO"}};
-        return make_pair(false, response);
+        bool caught = game.catch_totem(player.fd);
+        if (caught)
+        {
+            json message = {
+                {"caught", caught},
+                {"by", player.fd},
+            };
+            send_to_all(game.get_players_to_be_informed(), "TOTEM", message);
+        }
+        return make_pair(caught, json::object());
     }
 
     void remove_player_from_waiting_list(int client_fd)
