@@ -35,12 +35,21 @@ int epoll_fd;
 
 using json = nlohmann::json;
 
+bool has_inwards_arrows(std::string card)
+{
+    return card == "inward_arrows";
+}
+
+bool has_outwards_arrows(std::string card)
+{
+    return card == "outward_arrows";
+}
+
 struct Player
 {
     int fd;
     std::string username;
     bool active = true;
-    std::string top_card = EMPTY_CARD;
     std::vector<std::string> cards_facing_up{};
     std::vector<std::string> cards_facing_down{};
     // where to put that? In Game or server?
@@ -48,6 +57,26 @@ struct Player
     std::vector<char> msg_in{};
     std::vector<char> msg_out{};
     std::mutex msg_mtx;
+
+    json get_state()
+    {
+        json state = {
+            {"fd", fd},
+            {"username", username},
+            {"cards_up", cards_facing_up},
+            {"cards_down", cards_facing_down},
+        };
+        return state;
+    }
+
+    std::string get_top_card()
+    {
+        if (cards_facing_up.size() == 0)
+        {
+            return EMPTY_CARD;
+        }
+        return cards_facing_up.back();
+    }
 
     std::string turn_card()
     {
@@ -62,11 +91,18 @@ struct Player
             auto rng = std::default_random_engine{};
             std::shuffle(cards_facing_down.begin(), cards_facing_down.end(), rng);
             std::move(cards_facing_down.begin(), cards_facing_down.end(), std::back_inserter(cards_facing_up));
+            cards_facing_down.erase(cards_facing_down.begin(), cards_facing_down.end());
         }
-        std::string card = cards_facing_up.back();
-        cards_facing_up.pop_back();
-        top_card = card;
+        std::string card = cards_facing_down.back();
+        cards_facing_down.pop_back();
+        cards_facing_up.push_back(card);
         return card;
+    }
+
+    // <up count, down count>
+    std::pair<int, int> get_cards_count()
+    {
+        return std::make_pair(cards_facing_up.size(), cards_facing_down.size());
     }
 };
 
@@ -262,13 +298,13 @@ private:
     {
         std::unordered_map<std::string, int> cards_repeats;
 
-        for (const auto &player : players)
+        for (const auto &player : get_players())
         {
-            if (player->top_card == EMPTY_CARD)
+            if (player->get_top_card() == EMPTY_CARD)
             {
                 continue;
             }
-            ++cards_repeats[player->top_card];
+            ++cards_repeats[player->get_top_card()];
         }
         return cards_repeats;
     }
