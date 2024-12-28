@@ -219,6 +219,10 @@ public:
         next_card_turned_up = false;
         auto current_player_turn = players.find(player_id_turn);
         ++current_player_turn;
+        if (current_player_turn == players.end())
+        {
+            current_player_turn = players.begin();
+        }
         player_id_turn = current_player_turn->first;
     }
 
@@ -866,7 +870,8 @@ private:
             send_totem_down(game.get_players());
 
             game.next_turn();
-            send_next_turn(game.get_players(), game.get_current_turn_player().fd);
+            Player &next_turn_player = game.get_current_turn_player();
+            send_next_turn(game.get_players(), next_turn_player.fd);
         }
         std::cout << "Game " << game.get_identifier() << " has ended" << std::endl;
     }
