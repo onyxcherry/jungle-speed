@@ -334,7 +334,27 @@ public:
         }
     }
 
-    void transfer_cards_facing_up_to_middle(int player_id)
+    void punish_for_catching_totem_out_of_duel(int player_id)
+    {
+        Player &punished_player = *get_player(player_id);
+        std::vector<std::string> cards_to_be_distributed{};
+
+        std::move(cards_in_the_middle.begin(), cards_in_the_middle.end(), std::back_inserter(cards_to_be_distributed));
+        cards_in_the_middle.erase(cards_in_the_middle.begin(), cards_in_the_middle.end());
+
+        for (const auto &player : get_players())
+        {
+            std::move(player->cards_facing_up.begin(), player->cards_facing_up.end() - 1, std::back_inserter(cards_to_be_distributed));
+            player->cards_facing_up.erase(player->cards_facing_up.begin(), player->cards_facing_up.end() - 1);
+        }
+
+        auto rng = std::default_random_engine{};
+        std::shuffle(cards_to_be_distributed.begin(), cards_to_be_distributed.end(), rng);
+
+        std::move(cards_to_be_distributed.begin(), cards_to_be_distributed.end(), std::back_inserter(punished_player.cards_facing_down));
+    }
+
+    void transfer_winner_cards_facing_up_to_middle(int player_id)
     {
         Player &player = *get_player(player_id);
         std::move(player.cards_facing_up.begin(), player.cards_facing_up.end(), std::back_inserter(cards_in_the_middle));
@@ -776,11 +796,10 @@ private:
 
     static void run(Game &game)
     {
-        std::cout << "Run się odpala" << std::endl;
+        std::cout << "[GAME " << game.get_identifier() << "] Started thread" << std::endl;
         std::random_device rd;
         std::mt19937 gen(rd());
-        std::uniform_int_distribution<int> dont_repeat(3000, 3500);
-        int notrep_sleeping_duration_ms = dont_repeat(gen);
+        std::uniform_int_distribution<int> no_repeat_dist(3000, 3500);
 
         json start_info = json::object();
         send_to_all(game.get_players(), "START", start_info);
@@ -830,14 +849,16 @@ private:
                 }
             }
 
-            std::unique_lock totem_lock(game.totem_mtx);
+            auto max_waiting_ms_mistakenly_hold_totem = std::chrono::milliseconds(no_repeat_dist(gen));
+
+            std::unique_lock totem_lock(game.totem_mtx, std::defer_lock);
             if (game.cards_repeat() && game.totem_cv->wait_for(totem_lock, std::chrono::seconds(5), [&game]()
                                                                { return game.is_totem_held(); }))
             {
                 int winner_id = game.get_player_holder_id();
                 if (has_inwards_arrows(current_card))
                 {
-                    game.transfer_cards_facing_up_to_middle(winner_id);
+                    game.transfer_winner_cards_facing_up_to_middle(winner_id);
                 }
                 else
                 {
@@ -848,9 +869,11 @@ private:
                     game.set_turn_of(losers.back()->fd);
                 }
             }
-            else
+            else if (game.totem_cv->wait_for(totem_lock, max_waiting_ms_mistakenly_hold_totem, [&game]()
+                                             { return game.is_totem_held(); }))
             {
-                std::this_thread::sleep_for(std::chrono::milliseconds(notrep_sleeping_duration_ms));
+                int player_to_be_punished_id = game.get_player_holder_id();
+                game.punish_for_catching_totem_out_of_duel(player_to_be_punished_id);
             }
 
             for (auto &player : game.get_players())
