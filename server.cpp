@@ -11,45 +11,436 @@
 #include <chrono>
 #include <ctime>
 #include <stdexcept>
+#include <algorithm>
+#include <memory>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <random>
+#include <tuple>
+#include <set>
 
 #define MAX_EVENTS 10
 #define BUFFER_SIZE 1024
 
+#define NO_TOTEM_HOLDER -1
+
+const std::string msg_end_marker = "\t\t";
+const std::string EMPTY_CARD = "";
+
+const int PLAYERS_COUNT_THRESHOLD = 6;
+const int MAX_PLAYERS_COUNT = 8;
+const int MAX_GAMES_COUNT = 10;
+
+int epoll_fd;
+
 using json = nlohmann::json;
+
+bool has_inwards_arrows(std::string card)
+{
+    return card == "inward_arrows";
+}
+
+bool has_outwards_arrows(std::string card)
+{
+    return card == "outward_arrows";
+}
 
 struct Player
 {
     int fd;
     std::string username;
     bool active = true;
+    std::vector<std::string> cards_facing_up{};
+    std::vector<std::string> cards_facing_down{};
+    // where to put that? In Game or server?
     std::chrono::time_point<std::chrono::steady_clock> last_action;
+    std::vector<char> msg_in{};
+    std::vector<char> msg_out{};
+    std::mutex msg_mtx;
+
+    json get_state()
+    {
+        json state = {
+            {"fd", fd},
+            {"username", username},
+            {"cards_up", cards_facing_up},
+            {"cards_down", cards_facing_down},
+        };
+        return state;
+    }
+
+    std::string get_top_card()
+    {
+        if (cards_facing_up.size() == 0)
+        {
+            return EMPTY_CARD;
+        }
+        return cards_facing_up.back();
+    }
+
+    std::string turn_card()
+    {
+        if (cards_facing_down.size() == 0)
+        {
+            if (cards_facing_up.size() == 0)
+            {
+                // player won!
+                // Should be handled by other code (before)
+                return EMPTY_CARD;
+            }
+            auto rng = std::default_random_engine{};
+            std::vector<std::string> temp{};
+            std::move(cards_facing_up.begin(), cards_facing_up.end() - 1, std::back_inserter(temp));
+            cards_facing_up.erase(cards_facing_up.begin(), cards_facing_up.end() - 1);
+            std::shuffle(temp.begin(), temp.end(), rng);
+            std::move(temp.begin(), temp.end(), std::back_inserter(cards_facing_down));
+        }
+        std::string card = cards_facing_down.back();
+        cards_facing_down.pop_back();
+        cards_facing_up.push_back(card);
+        return card;
+    }
+
+    // <up count, down count>
+    std::pair<int, int> get_cards_count()
+    {
+        return std::make_pair(cards_facing_up.size(), cards_facing_down.size());
+    }
 };
 
-struct Game
+class Game
 {
     int id;
-    std::vector<Player> players;
+    // <player fd, Player object>; needs to be ordered!
+    std::map<int, std::shared_ptr<Player>> players{};
     bool is_started = false;
-    std::vector<std::string> cards_in_play;
-    bool totem_caught = false;
+    std::vector<std::string> cards_in_the_middle{};
+    int totem_held_by = NO_TOTEM_HOLDER;
+
+    // TODO: make the variable atomic
+    // player fd
+    int player_id_turn;
+    // <seq, player_id, card>
+    std::vector<std::tuple<int, int, std::string>> made_turns{};
+    bool next_card_turned_up = false;
+    std::unordered_map<std::string, int> cards_repeats{};
+
+public:
+    // changing totem_held_by needs locked totem_mtx
+    std::mutex totem_mtx;
+    std::unique_ptr<std::condition_variable> totem_cv = std::make_unique<std::condition_variable>();
+
+    // used for signaling that player made the turn in each round
+    // analyzing cards on the table requires totem_mtx to be held!
+    std::mutex next_card_mtx;
+    std::unique_ptr<std::condition_variable> next_card_cv = std::make_unique<std::condition_variable>();
+
+    Game(int game_id) // : id(game_id)
+    {
+        id = game_id;
+    }
+
+    bool has_been_started() const
+    {
+        return is_started;
+    }
+
+    bool add_player(std::shared_ptr<Player> &player_ptr)
+    {
+        if (!has_been_started())
+        {
+            players.insert(make_pair(player_ptr->fd, std::move(player_ptr)));
+            return true;
+        }
+        return false;
+    }
+
+    std::vector<std::shared_ptr<Player>> get_players()
+    {
+        std::vector<std::shared_ptr<Player>> players_to_return{};
+        for (const auto &p : players)
+        {
+            players_to_return.push_back(p.second);
+        }
+        return players_to_return;
+    }
+
+    int get_identifier() const
+    {
+        return id;
+    }
+
+    int get_players_count() const
+    {
+        return players.size();
+    }
+
+    void start()
+    {
+        std::vector<std::string> deck = generate_cards();
+        // TODO: turn on shuffling cards when all added and good working confirmed
+        // auto rng = std::default_random_engine{};
+        // std::shuffle(deck.begin(), deck.end(), rng);
+
+        auto players_it = players.begin();
+        for (const std::string &card : deck)
+        {
+            players_it->second->cards_facing_down.push_back(card);
+            ++players_it;
+            if (players_it == players.end())
+            {
+                players_it = players.begin();
+            }
+        }
+        auto players_list = get_players();
+        set_turn_of(players_list[0]->fd);
+
+        is_started = true;
+
+        for (const auto &player : get_players())
+        {
+            std::cout << player->get_state() << std::endl;
+        }
+    }
+
+    bool if_next_card_turned_up() const
+    {
+        return next_card_turned_up;
+    }
+
+    std::tuple<int, int, std::string> get_last_made_turn()
+    {
+        return made_turns.back();
+    }
+
+    void next_turn()
+    {
+        next_card_turned_up = false;
+        auto current_player_turn = players.find(player_id_turn);
+        ++current_player_turn;
+        if (current_player_turn == players.end())
+        {
+            current_player_turn = players.begin();
+        }
+        player_id_turn = current_player_turn->first;
+    }
+
+    Player &get_current_turn_player()
+    {
+        return *players[player_id_turn];
+    }
+
+    void set_turn_of(int player_id)
+    {
+        player_id_turn = player_id;
+    }
+
+    void turn_card(int player_id)
+    {
+        std::shared_ptr<Player> &player = get_player(player_id);
+        {
+            std::lock_guard<std::mutex> lock(next_card_mtx);
+            std::string turned_up_card = player->turn_card();
+            next_card_turned_up = true;
+            add_made_turn(player_id, turned_up_card);
+            cards_repeats = count_cards_repeats();
+        }
+        next_card_cv->notify_one();
+    }
+
+    int get_middle_cards_count() const
+    {
+        return cards_in_the_middle.size();
+    }
+
+    bool cards_repeat()
+    {
+        return std::any_of(cards_repeats.begin(), cards_repeats.end(), [](const auto &pair)
+                           { return pair.second >= 2; });
+    }
+
+    bool is_totem_held() const
+    {
+        return totem_held_by != NO_TOTEM_HOLDER;
+    }
+
+    int get_player_holder_id() const
+    {
+        return totem_held_by;
+    }
+
+    bool catch_totem(int player_id)
+    {
+        if (totem_mtx.try_lock() && !is_totem_held())
+        {
+            totem_held_by = player_id;
+            totem_mtx.unlock();
+            totem_cv->notify_all();
+            return true;
+        }
+        return false;
+    }
+
+    void put_totem_down()
+    {
+        totem_held_by = NO_TOTEM_HOLDER;
+        totem_mtx.unlock();
+    }
+
+    std::shared_ptr<Player> &get_player(int client_fd)
+    {
+        return players.at(client_fd);
+    }
+
+    std::vector<std::shared_ptr<Player>> get_losers(std::string current_card, int winner_id)
+    {
+        std::vector<std::shared_ptr<Player>> losers{};
+        for (const auto &player : get_players())
+        {
+            if (player->get_top_card() == current_card && player->fd != winner_id)
+            {
+                losers.push_back(player);
+            }
+        }
+        return losers;
+    }
+
+    void transfer_cards_to_losers(std::string current_card, int winner_id)
+    {
+        std::vector<std::shared_ptr<Player>> losers = get_losers(current_card, winner_id);
+
+        std::vector<std::string> cards_to_be_distributed{};
+        Player &winner = *get_player(winner_id);
+
+        std::move(winner.cards_facing_up.begin(), winner.cards_facing_up.end(), std::back_inserter(cards_to_be_distributed));
+        winner.cards_facing_up.erase(winner.cards_facing_up.begin(), winner.cards_facing_up.end());
+        std::move(cards_in_the_middle.begin(), cards_in_the_middle.end(), std::back_inserter(cards_to_be_distributed));
+        cards_in_the_middle.erase(cards_in_the_middle.begin(), cards_in_the_middle.end());
+
+        auto rng = std::default_random_engine{};
+        std::shuffle(cards_to_be_distributed.begin(), cards_to_be_distributed.end(), rng);
+
+        for (const auto &player : get_players())
+        {
+            std::move(player->cards_facing_up.begin(), player->cards_facing_up.end(), std::back_inserter(player->cards_facing_down));
+            player->cards_facing_up.erase(player->cards_facing_up.begin(), player->cards_facing_up.end());
+        }
+
+        int i = 0;
+        for (const std::string &card : cards_to_be_distributed)
+        {
+            players[i]->cards_facing_down.push_back(card);
+            i = ++i % players.size();
+        }
+    }
+
+    void punish_for_catching_totem_out_of_duel(int player_id)
+    {
+        Player &punished_player = *get_player(player_id);
+        std::vector<std::string> cards_to_be_distributed{};
+
+        std::move(cards_in_the_middle.begin(), cards_in_the_middle.end(), std::back_inserter(cards_to_be_distributed));
+        cards_in_the_middle.erase(cards_in_the_middle.begin(), cards_in_the_middle.end());
+
+        for (const auto &player : get_players())
+        {
+            std::move(player->cards_facing_up.begin(), player->cards_facing_up.end() - 1, std::back_inserter(cards_to_be_distributed));
+            player->cards_facing_up.erase(player->cards_facing_up.begin(), player->cards_facing_up.end() - 1);
+        }
+
+        auto rng = std::default_random_engine{};
+        std::shuffle(cards_to_be_distributed.begin(), cards_to_be_distributed.end(), rng);
+
+        std::move(cards_to_be_distributed.begin(), cards_to_be_distributed.end(), std::back_inserter(punished_player.cards_facing_down));
+    }
+
+    void transfer_winner_cards_facing_up_to_middle(int player_id)
+    {
+        Player &player = *get_player(player_id);
+        std::move(player.cards_facing_up.begin(), player.cards_facing_up.end(), std::back_inserter(cards_in_the_middle));
+        player.cards_facing_up.erase(player.cards_facing_up.begin(), player.cards_facing_up.end());
+    }
+
+    std::pair<bool, json> is_ended()
+    {
+        for (const auto &player : get_players())
+        {
+            std::pair<int, int> cards_counts = player->get_cards_count();
+            if (cards_counts.first == 0 && cards_counts.second == 0)
+            {
+                json message = {{"Winner", player->fd}};
+                return make_pair(true, message);
+            }
+        }
+        json empty_message = json::object();
+        return make_pair(false, empty_message);
+    }
+
+private:
+    std::vector<std::string> generate_cards(int n = 70)
+    {
+        // TODO; assert that no more than 2 same cards exist
+        return std::vector<std::string>{
+            "quadruple_mobius_strip_yellow",
+            "quadruple_mobius_strip_purple",
+            "quadruple_mobius_strip_red",
+            "quadruple_shuriken_purple",
+            "quadruple_shuriken_green",
+            "quadruple_shuriken_orange",
+        };
+    }
+
+    std::unordered_map<std::string, int> count_cards_repeats()
+    {
+        std::unordered_map<std::string, int> cards_repeats;
+
+        for (const auto &player : get_players())
+        {
+            if (player->get_top_card() == EMPTY_CARD)
+            {
+                continue;
+            }
+            ++cards_repeats[player->get_top_card()];
+        }
+        return cards_repeats;
+    }
+
+    void add_made_turn(int player_id, std::string &card)
+    {
+        int seq = made_turns.size() + 1;
+        auto turned = std::make_tuple(seq, player_id, card);
+        made_turns.push_back(turned);
+    }
 };
 
 class JungleSpeedServer
 {
     int server_fd;
     sockaddr_in server_addr;
-    std::unordered_map<int, Player> players;
-    std::unordered_map<int, Game> games;
+
+    // <game_number, game_obj>
+    std::unordered_map<int, std::shared_ptr<Game>> games;
+
+    // <client_fd, game_number>
+    std::unordered_map<int, int> players_in_games;
+    std::vector<std::shared_ptr<Player>> players_out_of_games;
     int next_game_id = 1;
     int next_player_id = 1;
-    int epoll_fd;
+    int SERVER_PTR = 1;
 
-    std::string ip_address;
-    uint16_t port;
+    const std::string ip_address;
+    const uint16_t port;
 
 public:
     JungleSpeedServer(const std::string &ip, uint16_t port)
         : ip_address(ip), port(port) {}
+
+    ~JungleSpeedServer()
+    {
+        close(server_fd);
+        close(epoll_fd);
+    }
 
     void start_server()
     {
@@ -60,21 +451,24 @@ public:
 
         while (true)
         {
-            epoll_event events[MAX_EVENTS];
-            int event_count = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
+            epoll_event ee;
+            int event_count = epoll_wait(epoll_fd, &ee, 1, -1);
 
             // TODO: beware that system's fd number *cannot* be identifier of a client
             // as fd is a first-free number, not unique seq!
-            for (int i = 0; i < event_count; ++i)
+            if (ee.data.ptr == &SERVER_PTR)
             {
-                if (events[i].data.fd == server_fd)
-                {
-                    accept_new_connection();
-                }
-                else
-                {
-                    handle_client_event(events[i].data.fd);
-                }
+                accept_new_connection();
+            }
+            else if (ee.events & EPOLLIN)
+            {
+                Player *player = (Player *)(ee.data.ptr);
+                handle_client_event(*player);
+            }
+            else if (ee.events & EPOLLOUT)
+            {
+                Player *player = (Player *)(ee.data.ptr);
+                send_messages_to_client(*player);
             }
         }
     }
@@ -125,11 +519,11 @@ private:
             exit(EXIT_FAILURE);
         }
 
-        epoll_event event;
-        event.events = EPOLLIN;
-        event.data.fd = server_fd;
+        epoll_event ee;
+        ee.events = EPOLLIN;
+        ee.data.ptr = &SERVER_PTR;
 
-        if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_fd, &event) == -1)
+        if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_fd, &ee) == -1)
         {
             perror("Epoll control failed");
             close(server_fd);
@@ -148,10 +542,15 @@ private:
             perror("Accept failed");
             return;
         }
+        std::shared_ptr<Player> player = std::make_shared<Player>();
+        player->fd = client_fd;
+        player->username = "Player" + std::to_string(next_player_id++);
+        player->last_action = std::chrono::steady_clock::now();
+        players_out_of_games.push_back(player);
 
         epoll_event event;
         event.events = EPOLLIN;
-        event.data.fd = client_fd;
+        event.data.ptr = player.get();
 
         if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &event) == -1)
         {
@@ -159,154 +558,507 @@ private:
             close(client_fd);
             return;
         }
-
-        players[client_fd] = {client_fd, "Player" + std::to_string(next_player_id++), true,
-                              std::chrono::steady_clock::now()};
         std::cout << "New client connected: FD=" << client_fd << "\n";
     }
 
-    void handle_client_event(int client_fd)
+    std::string extract_message(std::vector<char> &data)
     {
-        char buffer[BUFFER_SIZE] = {0};
-        // TODO: support splitted message in the stream
-        // maybe check if current buf content is a valid JSON message?
-        ssize_t bytes_received = recv(client_fd, buffer, BUFFER_SIZE - 1, 0);
+        auto it = std::search(data.begin(), data.end(), msg_end_marker.begin(), msg_end_marker.end());
+        if (it == data.end())
+        {
+            return "";
+        }
+
+        std::string result(data.begin(), it);
+        data.erase(data.begin(), it + msg_end_marker.size());
+        return result;
+    }
+
+    void handle_client_event(Player &player)
+    {
+        char buffer[BUFFER_SIZE] = {};
+        ssize_t bytes_received = recv(player.fd, buffer, BUFFER_SIZE, 0);
+
         if (bytes_received <= 0)
         {
-            disconnect_client(client_fd);
+            std::cout << "[Event handling] Will disconnect client " << player.fd << " as received " << bytes_received << " bytes\n";
+            disconnect_client(player);
+            return;
+        }
+        player.msg_in.insert(player.msg_in.end(), buffer, buffer + bytes_received);
+        std::string message = extract_message(player.msg_in);
+
+        if (message == "")
+        {
             return;
         }
 
-        std::string request(buffer);
         try
         {
-            json request_json = json::parse(request);
-            process_client_message(client_fd, request_json);
+            json request_json = json::parse(message);
+            process_client_message(player, request_json);
         }
         catch (json::parse_error &e)
         {
-            send_error(client_fd, "Invalid JSON format.");
+            json error_response = {{"error", "Invalid JSON format."}};
+            send_error(player, "UNKNOWN", error_response);
         }
     }
 
-    void disconnect_client(int client_fd)
+    void send_messages_to_client(Player &player)
     {
-        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client_fd, nullptr);
-        close(client_fd);
-        players.erase(client_fd);
-        std::cout << "Client disconnected: FD=" << client_fd << "\n";
+        int sent_bytes = send(player.fd, player.msg_out.data(), player.msg_out.size(), 0);
+        if (sent_bytes <= 0)
+        {
+            std::cout << "[Sending] Will disconnect client " << player.fd << " as trying to send returned " << sent_bytes << '\n';
+            disconnect_client(player);
+            return;
+        }
+        player.msg_out.erase(player.msg_out.begin(), player.msg_out.begin() + sent_bytes);
+
+        if (player.msg_out.size() == 0)
+        {
+            epoll_event event;
+            event.events = EPOLLIN;
+            event.data.ptr = &player;
+
+            if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, player.fd, &event) == -1)
+            {
+                perror("Epoll del for OUT client failed");
+                close(player.fd);
+                return;
+            }
+        }
     }
 
-    void send_message(int client_fd, const json &message)
+    void disconnect_client(Player &disconnected_player)
+    {
+        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, disconnected_player.fd, nullptr);
+        close(disconnected_player.fd);
+
+        remove_player_from_waiting_list(disconnected_player.fd);
+        players_in_games.erase(disconnected_player.fd);
+        std::cout << "Client disconnected: FD=" << disconnected_player.fd << "\n";
+    }
+
+    // void send_message(Player &player, const json &message)
+    // {
+    //     std::string serialized_message = message.dump();
+    //     send(player.fd, serialized_message.c_str(), serialized_message.size(), 0);
+    // }
+
+    static void add_message_to_buffer_to_send(Player &player, const json &message)
     {
         std::string serialized_message = message.dump();
-        send(client_fd, serialized_message.c_str(), serialized_message.size(), 0);
+        std::lock_guard<std::mutex> lock(player.msg_mtx);
+        player.msg_out.insert(player.msg_out.end(), serialized_message.begin(), serialized_message.end());
+
+        epoll_event event;
+        event.events = EPOLLIN | EPOLLOUT;
+        event.data.ptr = &player;
+
+        if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, player.fd, &event) == -1)
+        {
+            perror("Epoll add for OUT client failed");
+            close(player.fd);
+            return;
+        }
     }
 
-    void send_error(int client_fd, const std::string &error_message)
+    void send_success(Player &player, const std::string &response_to, json &response)
     {
-        json response = {{"error", error_message}};
-        send_message(client_fd, response);
+        response["response"] = response_to;
+        response["success"] = true;
+        add_message_to_buffer_to_send(player, response);
     }
 
-    void process_client_message(int client_fd, const json &message)
+    void send_error(Player &player, const std::string &response_to, json &error_response)
+    {
+        error_response["response"] = response_to;
+        error_response["success"] = false;
+        add_message_to_buffer_to_send(player, error_response);
+    }
+
+    static void send_game_update(Player &player, const std::string &code, json &message)
+    {
+        message["type"] = "GAME_UPDATE";
+        message["code"] = code;
+        add_message_to_buffer_to_send(player, message);
+    };
+
+    static void send_to_all(std::vector<std::shared_ptr<Player>> players, const std::string &code, json &message)
+    {
+        for (const auto &player : players)
+        {
+            send_game_update(*player, code, message);
+        }
+    }
+
+    static void send_turned_card(std::vector<std::shared_ptr<Player>> players, int player_id, std::string card)
+    {
+        json turned_card_msg = {{"by", player_id},
+                                {"card", card}};
+        send_to_all(players, "TURNED_CARD", turned_card_msg);
+    }
+
+    static void send_totem_held(std::vector<std::shared_ptr<Player>> players, int player_id)
+    {
+        json message = {
+            {"held", true},
+            {"by", player_id},
+        };
+        send_to_all(players, "TOTEM", message);
+    }
+
+    static void send_totem_down(std::vector<std::shared_ptr<Player>> players)
+    {
+        json totem_down_msg = {{"held", false}};
+        send_to_all(players, "TOTEM", totem_down_msg);
+    }
+
+    static void send_next_turn(std::vector<std::shared_ptr<Player>> players, int player_id)
+    {
+        json message = {{"next_player", player_id}};
+        send_to_all(players, "NEXT_TURN", message);
+    }
+
+    static void send_cards_count(std::shared_ptr<Player> &player, int in_middle_count)
+    {
+        std::pair<int, int> cards_counts = player->get_cards_count();
+        json message = {
+            {"up", cards_counts.first},
+            {"down", cards_counts.second},
+            {"middle", in_middle_count},
+        };
+        send_game_update(*player, "CARDS_COUNTS", message);
+    }
+
+    static void send_duel_result(std::vector<std::shared_ptr<Player>> players, int winner_id, std::vector<std::shared_ptr<Player>> losers)
+    {
+        std::vector<int> losers_ids;
+        losers_ids.reserve(losers.size());
+        std::transform(losers.begin(), losers.end(), std::back_inserter(losers_ids),
+                       [](const std::shared_ptr<Player> &player)
+                       { return player->fd; });
+        json duel_result_msg = {{"winner", winner_id}, {"losers", losers_ids}};
+        send_to_all(players, "DUEL", duel_result_msg);
+    }
+
+    void process_client_message(Player &player, const json &message)
     {
         if (!message.contains("action"))
         {
-            send_error(client_fd, "Missing 'action' field.");
+            json error_response = {{"error", "Missing 'action' field."}};
+            send_error(player, "UNKNOWN", error_response);
             return;
         }
 
         std::string action = message["action"];
-        players[client_fd].last_action = std::chrono::steady_clock::now();
+        player.last_action = std::chrono::steady_clock::now();
 
         if (action == "LIST_GAMES")
         {
-            list_games(client_fd);
+            json response = list_games();
+            send_success(player, action, response);
         }
         else if (action == "CREATE_GAME")
         {
-            create_game(client_fd);
+            auto [success, response] = create_game();
+            (success) ? send_success(player, action, response) : send_error(player, action, response);
         }
         else if (action == "JOIN_GAME")
         {
-            join_game(client_fd, message);
+            auto [success, response] = join_game(player, message);
+            (success) ? send_success(player, action, response) : send_error(player, action, response);
         }
         else if (action == "TURN_CARD")
         {
-            turn_card(client_fd, message);
+            auto [success, response] = turn_card(player);
+            (success) ? send_success(player, action, response) : send_error(player, action, response);
         }
         else if (action == "CATCH_TOTEM")
         {
-            catch_totem(client_fd, message);
+            auto [success, response] = catch_totem(player);
+            (success) ? send_success(player, action, response) : send_error(player, action, response);
         }
         else
         {
-            send_error(client_fd, "Unknown action.");
+            json error_response = {{"error", "Unknown action."}};
+            send_error(player, "UNKNOWN", error_response);
         }
     }
 
-    void list_games(int client_fd)
+    void start_game(Game &game)
     {
-        json response;
-        response["action"] = "LIST_GAMES";
-        response["games"] = json::array();
+        game.start();
+        std::thread t{run, std::ref(game)};
+        t.detach();
+    }
+
+    static void run(Game &game)
+    {
+        std::cout << "[GAME " << game.get_identifier() << "] Started thread" << std::endl;
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<int> no_repeat_dist(3000, 3500);
+
+        json start_info = json::object();
+        send_to_all(game.get_players(), "START", start_info);
+
+        while (true)
+        {
+            Player &current_turn_player = game.get_current_turn_player();
+            json turn_card_pls_msg = json::object();
+            send_game_update(current_turn_player, "CAN_TURN_CARD", turn_card_pls_msg);
+            std::string current_card;
+            {
+                std::unique_lock next_card_lock(game.next_card_mtx);
+                game.next_card_cv->wait(next_card_lock, [&game]()
+                                        { return game.if_next_card_turned_up(); });
+
+                auto [seq, player_id, card] = game.get_last_made_turn();
+                current_card = card;
+
+                send_turned_card(game.get_players(), player_id, card);
+
+                if (has_outwards_arrows(current_card))
+                {
+                    json one_message = json::object();
+                    std::set<std::string> turned_up_cards;
+                    bool duel = false;
+                    for (const auto &player : game.get_players())
+                    {
+                        std::string card = player->turn_card();
+                        if (turned_up_cards.contains(card))
+                        {
+                            duel = true;
+                        }
+                        turned_up_cards.insert(card);
+                        one_message[player->fd] = card;
+                    }
+                    send_to_all(game.get_players(), "OUTWARDS_ARROWS_TURNED_CARDS", one_message);
+
+                    if (!duel)
+                    {
+                        game.next_turn();
+                        game.set_turn_of(player_id);
+                        send_next_turn(game.get_players(), game.get_current_turn_player().fd);
+                        continue;
+                    }
+                    // TODO: if same symbols, continue executing code below (wait for totem, all other players will be losers!)
+                    // TODO: if not same symbols, continue the loop from the same player
+                }
+            }
+
+            auto max_waiting_ms_mistakenly_hold_totem = std::chrono::milliseconds(no_repeat_dist(gen));
+
+            std::unique_lock totem_lock(game.totem_mtx);
+            if (game.cards_repeat() && game.totem_cv->wait_for(totem_lock, std::chrono::seconds(5), [&game]()
+                                                               { return game.is_totem_held(); }))
+            {
+                int winner_id = game.get_player_holder_id();
+                if (has_inwards_arrows(current_card))
+                {
+                    game.transfer_winner_cards_facing_up_to_middle(winner_id);
+                }
+                else
+                {
+                    game.transfer_cards_to_losers(current_card, winner_id);
+                    std::vector<std::shared_ptr<Player>> losers = game.get_losers(current_card, winner_id);
+                    send_duel_result(game.get_players(), winner_id, losers);
+
+                    game.set_turn_of(losers.back()->fd);
+                }
+            }
+            else if (game.totem_cv->wait_for(totem_lock, max_waiting_ms_mistakenly_hold_totem, [&game]()
+                                             { return game.is_totem_held(); }))
+            {
+                int player_to_be_punished_id = game.get_player_holder_id();
+                game.punish_for_catching_totem_out_of_duel(player_to_be_punished_id);
+            }
+
+            for (auto &player : game.get_players())
+            {
+                send_cards_count(player, game.get_middle_cards_count());
+            }
+
+            std::pair<int, json> game_possible_end = game.is_ended();
+            if (game_possible_end.first)
+            {
+                send_to_all(game.get_players(), "END", game_possible_end.second);
+                break;
+            }
+
+            game.put_totem_down();
+            send_totem_down(game.get_players());
+
+            game.next_turn();
+            Player &next_turn_player = game.get_current_turn_player();
+            send_next_turn(game.get_players(), next_turn_player.fd);
+        }
+        std::cout << "Game " << game.get_identifier() << " has ended" << std::endl;
+    }
+
+    json list_games()
+    {
+        json response = {
+            {"games", json::array()},
+        };
 
         for (const auto &pair : games)
         {
-            const Game &game = pair.second;
-            json game_info = {{"game_id", game.id},
-                              {"player_count", game.players.size()},
-                              {"is_started", game.is_started}};
+            const Game &game = *pair.second;
+            json game_info = {{"game_id", game.get_identifier()},
+                              {"player_count", game.get_players_count()},
+                              {"is_started", game.has_been_started()}};
             response["games"].push_back(game_info);
         }
-
-        send_message(client_fd, response);
+        return response;
     }
 
-    void create_game(int client_fd)
+    std::pair<bool, json> create_game()
     {
+        int games_count = games.size();
+        if (games_count >= MAX_GAMES_COUNT)
+        {
+            json response = {{"error", "Max games count limit hit."}};
+            return make_pair(false, response);
+        }
         int game_id = next_game_id++;
-        games[game_id] = {game_id};
-        json response = {{"action", "CREATE_GAME"}, {"game_id", game_id}};
-        send_message(client_fd, response);
+
+        std::shared_ptr game_ptr = std::make_shared<Game>(game_id);
+        games.insert(std::make_pair(game_id, game_ptr));
+        json response = {{"game_id", game_id}};
+        return make_pair(true, response);
     }
 
-    void join_game(int client_fd, const json &message)
+    std::pair<bool, json> join_game(Player &player, const json &message)
     {
         if (!message.contains("game_id"))
         {
-            send_error(client_fd, "Missing 'game_id' field.");
-            return;
+            json response = {{"error", "Missing 'game_id' field."}};
+            return make_pair(false, response);
         }
 
         int game_id = message["game_id"];
         if (games.find(game_id) == games.end())
         {
-            send_error(client_fd, "Game not found.");
-            return;
+            json response = {{"error", "Game not found."}};
+            return make_pair(false, response);
         }
 
-        Game &game = games[game_id];
-        if (game.is_started)
+        int player_fd_searched_for = player.fd;
+        if (players_in_games.find(player_fd_searched_for) != players_in_games.end())
         {
-            send_error(client_fd, "Game already started.");
-            return;
+            json response = {{"error", "Already joined to this game."}};
+            return make_pair(false, response);
         }
 
-        game.players.push_back(players[client_fd]);
-        json response = {{"action", "JOIN_GAME"}, {"game_id", game_id}};
-        send_message(client_fd, response);
+        Game &game = *games.at(game_id);
+        if (game.has_been_started())
+        {
+            json response = {{"error", "Game already started."}};
+            return make_pair(false, response);
+        }
+
+        int players_count = game.get_players_count();
+        if (players_count >= MAX_PLAYERS_COUNT)
+        {
+            json response = {{"error", "Max players count limit hit."}};
+            return make_pair(false, response);
+        }
+
+        auto player_it = std::find_if(players_out_of_games.begin(), players_out_of_games.end(), [player_fd_searched_for](const std::shared_ptr<Player> &p)
+                                      { return p->fd == player_fd_searched_for; });
+        if (player_it == players_out_of_games.end())
+        {
+            json response = {{"error", "Cannot find the player."}};
+            return make_pair(false, response);
+        }
+        auto player_ptr = *player_it;
+
+        players_in_games.insert(std::make_pair(player.fd, game.get_identifier()));
+        game.add_player(player_ptr);
+        remove_player_from_waiting_list(player.fd);
+        json response = {{"game_id", game_id}};
+
+        // TODO: explicitly starting by first player in the game
+        if (players_count + 1 == PLAYERS_COUNT_THRESHOLD)
+        {
+            start_game(game);
+        }
+
+        return make_pair(true, response);
     }
 
-    void turn_card(int client_fd, const json &message)
+    std::pair<bool, json> turn_card(Player &player)
     {
-        // Implement game logic for turning cards.
+        auto player_game_it = players_in_games.find(player.fd);
+        if (player_game_it == players_in_games.end())
+        {
+            json response = {{"error", "Cannot turn card as player is not part of any game."}};
+            return make_pair(false, response);
+        }
+
+        Game &game = *games.at(player_game_it->second);
+        if (!game.has_been_started())
+        {
+            json response = {{"error", "Cannot turn card as the game has not been started."}};
+            return make_pair(false, response);
+        }
+
+        Player &current_turn_player = game.get_current_turn_player();
+        if (player.fd != current_turn_player.fd)
+        {
+            json response = {{"error", "Cannot turn card in other player's turn."}};
+            return make_pair(false, response);
+        }
+
+        if (game.if_next_card_turned_up())
+        {
+            json response = {{"error", "Cannot turn card again."}};
+            return make_pair(false, response);
+        }
+
+        game.turn_card(player.fd);
+        json response = json::object();
+        return make_pair(true, response);
     }
 
-    void catch_totem(int client_fd, const json &message)
+    std::pair<bool, json> catch_totem(Player &player)
     {
-        // Implement game logic for catching the totem.
+        auto player_game_it = players_in_games.find(player.fd);
+        if (player_game_it == players_in_games.end())
+        {
+            json response = {{"error", "Cannot catch the totem as player is not part of any game."}};
+            return make_pair(false, response);
+        }
+
+        Game &game = *games.at(player_game_it->second);
+        if (!game.has_been_started())
+        {
+            json response = {{"error", "Cannot catch the totem as the game has not been started."}};
+            return make_pair(false, response);
+        }
+
+        // ? can the totem be caught when a card is changing?
+        // ? any game-bad state possible?
+        // ? despite the player's obvious loss
+
+        bool caught = game.catch_totem(player.fd);
+        if (caught)
+        {
+            send_totem_held(game.get_players(), player.fd);
+        }
+        return make_pair(caught, json::object());
+    }
+
+    void remove_player_from_waiting_list(int client_fd)
+    {
+        players_out_of_games.erase(
+            std::remove_if(players_out_of_games.begin(), players_out_of_games.end(), [client_fd](std::shared_ptr<Player> const player)
+                           { return player->fd == client_fd; }),
+            players_out_of_games.end());
     }
 };
 
