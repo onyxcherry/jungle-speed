@@ -283,9 +283,8 @@ public:
 
     void put_totem_down()
     {
-        std::lock_guard<std::mutex> lock(totem_mtx);
         totem_held_by = NO_TOTEM_HOLDER;
-        totem_cv->notify_one();
+        totem_mtx.unlock();
     }
 
     std::shared_ptr<Player> &get_player(int client_fd)
