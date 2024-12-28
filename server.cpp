@@ -81,18 +81,20 @@ struct Player
 
     std::string turn_card()
     {
-        if (cards_facing_up.size() == 0)
+        if (cards_facing_down.size() == 0)
         {
-            if (cards_facing_down.size() == 0)
+            if (cards_facing_up.size() == 0)
             {
                 // player won!
                 // Should be handled by other code (before)
                 return EMPTY_CARD;
             }
             auto rng = std::default_random_engine{};
-            std::shuffle(cards_facing_down.begin(), cards_facing_down.end(), rng);
-            std::move(cards_facing_down.begin(), cards_facing_down.end(), std::back_inserter(cards_facing_up));
-            cards_facing_down.erase(cards_facing_down.begin(), cards_facing_down.end());
+            std::vector<std::string> temp{};
+            std::move(cards_facing_up.begin(), cards_facing_up.end() - 1, std::back_inserter(temp));
+            cards_facing_up.erase(cards_facing_up.begin(), cards_facing_up.end() - 1);
+            std::shuffle(temp.begin(), temp.end(), rng);
+            std::move(temp.begin(), temp.end(), std::back_inserter(cards_facing_down));
         }
         std::string card = cards_facing_down.back();
         cards_facing_down.pop_back();
