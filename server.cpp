@@ -275,7 +275,8 @@ public:
         if (totem_mtx.try_lock() && !is_totem_held())
         {
             totem_held_by = player_id;
-            totem_cv->notify_one();
+            totem_mtx.unlock();
+            totem_cv->notify_all();
             return true;
         }
         return false;
@@ -851,7 +852,7 @@ private:
 
             auto max_waiting_ms_mistakenly_hold_totem = std::chrono::milliseconds(no_repeat_dist(gen));
 
-            std::unique_lock totem_lock(game.totem_mtx, std::defer_lock);
+            std::unique_lock totem_lock(game.totem_mtx);
             if (game.cards_repeat() && game.totem_cv->wait_for(totem_lock, std::chrono::seconds(5), [&game]()
                                                                { return game.is_totem_held(); }))
             {
