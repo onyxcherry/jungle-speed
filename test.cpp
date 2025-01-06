@@ -3,12 +3,12 @@
 #include <cstring>
 #include <ctime>
 #include <chrono>
-#include "json.hpp"
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <sstream>
 #include <SFML/Graphics.hpp>
 #include <thread>
+#include <nlohmann/json.hpp>
 
 #define BUFFER_SIZE 1024
 #define WINDOW_WIDTH 800
