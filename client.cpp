@@ -11,15 +11,21 @@
 
 using json = nlohmann::json;
 
+
+
+
 class JungleSpeedClient
 {
     int client_fd;
     sockaddr_in server_addr;
-
+    std::string username;
+    bool in_game;
+    bool is_owner;
 public:
     JungleSpeedClient(const std::string &ip, uint16_t port)
     {
         client_fd = socket(AF_INET, SOCK_STREAM, 0);
+        in_game = false;
         if (client_fd == -1)
         {
             perror("Socket creation failed");
@@ -29,6 +35,9 @@ public:
         server_addr.sin_family = AF_INET;
         server_addr.sin_port = htons(port);
         inet_pton(AF_INET, ip.c_str(), &server_addr.sin_addr);
+
+
+
     }
 
     void connect_to_server()
@@ -64,37 +73,51 @@ public:
         connect_to_server();
         while (true)
         {
-            display_menu();
             int choice;
-            std::cin >> choice;
 
-            if (choice == 1)
-            {
-                list_games();
-            }
-            else if (choice == 2)
-            {
-                create_game();
-            }
-            else if (choice == 3)
-            {
-                join_game();
-            }
-            else if (choice == 4)
-            {
-                turn_card();
-            }
-            else if (choice == 5)
-            {
-                catch_totem();
-            }
-            else if (choice == 0)
-            {
-                break;
-            }
-            else
-            {
-                std::cout << "Invalid option. Try again.\n";
+
+            if(in_game) {
+                display_game_window();
+                std::cin >> choice;
+                if (choice == 1) {
+                    
+                } else if (choice == 2) {
+                    set_in_game(false);
+                };
+
+            } else {    
+
+                display_menu();
+                std::cin >> choice;
+
+                if (choice == 1)
+                {
+                    list_games();
+                }
+                else if (choice == 2)
+                {
+                    create_game();
+                }
+                else if (choice == 3)
+                {
+                    join_game();
+                }
+                else if (choice == 4)
+                {
+                    turn_card();
+                }
+                else if (choice == 5)
+                {
+                    catch_totem();
+                }
+                else if (choice == 0)
+                {
+                    break;
+                }
+                else
+                {
+                    std::cout << "Invalid option. Try again.\n";
+                }
             }
         }
 
@@ -114,10 +137,20 @@ private:
         std::cout << "Enter your choice: ";
     }
 
+    void display_game_window() {
+        std::cout << "\n--- Game window ---\n";
+        std::cout << "1. List Players\n";
+        std::cout << "2. Exit Game\n";
+        std::cout << "3. Start Game\n";
+    }
+
     void list_games()
     {
         json request;
         request["action"] = "LIST_GAMES";
+
+        std::cout << request.dump() << std::endl;
+
         send_message(request.dump());
 
         std::string response = receive_message();
@@ -179,6 +212,7 @@ private:
             else
             {
                 std::cout << "Successfully joined the game.\n";
+                set_in_game(true);
             }
         }
         else
@@ -248,6 +282,14 @@ private:
         auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
         return std::to_string(milliseconds);
     }
+
+    void set_in_game(bool state) {
+        in_game = state;
+    }
+
+    void set_is_owner(bool state) {
+        is_owner = state;
+    }
 };
 
 int main(int argc, char *argv[])
@@ -261,7 +303,11 @@ int main(int argc, char *argv[])
         port = static_cast<uint16_t>(std::stoi(argv[2]));
     }
 
+
     JungleSpeedClient client(ip, port);
+
+
+
     client.run();
     return 0;
 }
