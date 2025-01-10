@@ -97,8 +97,8 @@ struct Player
             std::cout << cards_facing_down.size() << std::endl;
             auto rng = std::default_random_engine{};
             std::vector<std::string> temp{};
-            std::move(cards_facing_up.begin(), cards_facing_up.end() - 1, std::back_inserter(temp));
-            cards_facing_up.erase(cards_facing_up.begin(), cards_facing_up.end() - 1);
+            std::move(cards_facing_up.begin(), cards_facing_up.end(), std::back_inserter(temp));
+            cards_facing_up.erase(cards_facing_up.begin(), cards_facing_up.end());
             std::shuffle(temp.begin(), temp.end(), rng);
             std::move(temp.begin(), temp.end(), std::back_inserter(cards_facing_down));
             std::cout << "dwon: " << cards_facing_down.size() << std::endl;
@@ -406,6 +406,10 @@ public:
 
         for (const auto &player : get_players())
         {
+            if (player->cards_facing_up.size() <= 1)
+            {
+                continue;
+            }
             std::move(player->cards_facing_up.begin(), player->cards_facing_up.end() - 1, std::back_inserter(cards_to_be_distributed));
             player->cards_facing_up.erase(player->cards_facing_up.begin(), player->cards_facing_up.end() - 1);
         }
