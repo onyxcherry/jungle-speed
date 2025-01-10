@@ -14,6 +14,8 @@
 #define WINDOW_WIDTH 800
 #define WINDOW_LENGHT 600
 
+const std::string msg_end_marker = "\t\t";
+
 using json = nlohmann::json;
 
 
@@ -30,12 +32,43 @@ struct Lobby {
     sf::Text text;
 };
 
+struct Player {
+    int fd;
+    std::string username;
+    bool has_down_cards = false;
+    bool has_up_cards = false;
+    std::string up_card_symbol;
+    int card_symbol = 0;
+
+};
+
 struct InLobby {
     sf::RectangleShape StartButton;
     sf::Text GameInfo; 
     sf::Text Owner; 
     std::string owner_name;
     std::vector<std::string> usernames;
+    
+    int my_position;
+    int my_fd;
+
+    std::vector<Player> players;
+
+    int current_player_turn_fd;
+
+    bool totem_held;
+    int totem_holder;
+
+    bool cards_in_the_middle = false;
+    int middle_amount = 0;
+    int up_amount = 0;
+    int down_amount = 0;
+
+    //TODO make it a mp so when you hive an fd you get plaer/
+
+    // Can be done by posiotion
+    //Turn card ise save here nad 
+
 };
 
 bool isClicked(const sf::RectangleShape& button, sf::Vector2i mousePos) {
@@ -96,8 +129,22 @@ class JungleSpeedClient
     int position_in_game;
     std::vector<sf::Texture> textures;
     sf::Clock clock;
+
+
     bool show_warrning = false;
 
+    sf::Clock outwardClock;
+    bool is_outward_card = false;
+ 
+    sf::Clock gameStartedClock;
+    bool can_trun_card = false;
+    bool game_started= false;
+    bool has_upside_cards= false;
+    bool has_upward_cards= false;
+    int shown_card_symbol= false;
+
+
+    std::vector<char> msg_in{};
 public:
     JungleSpeedClient(const std::string &ip, uint16_t port)
     {
@@ -112,20 +159,31 @@ public:
         server_addr.sin_family = AF_INET;
         server_addr.sin_port = htons(port);
         inet_pton(AF_INET, ip.c_str(), &server_addr.sin_addr);
-        setup_textures();
+        setup_textures("img"); //0
+        setup_textures("outward_arrows"); //1
+
+        setup_textures("circle_inside_x_blue"); //2
+        setup_textures("circle_inside_x_red"); //3
+        setup_textures("circle_inside_x_yellow"); //4
+        setup_textures("circle_inside_x_green"); //5
+        setup_textures("circle_whole_x_blue"); //6
+        setup_textures("circle_whole_x_red"); //7
+        setup_textures("circle_whole_x_yellow"); //8
+        setup_textures("circle_whole_x_green"); //9
 
 
 
     }
 
-    bool setup_textures() {
+    bool setup_textures(std:: string name) {
         sf::Texture tex;
         sf::Image image;
         sf::Image scaledImage;
 
         int img_size = 80;
         scaledImage.create(img_size,img_size);
-        if(!image.loadFromFile("img.png")) {
+        std::string file_name = name + ".png";
+        if(!image.loadFromFile(file_name)) {
             std::cerr << "Cannot load img" << std::endl;
             return false;
         }
@@ -157,23 +215,72 @@ public:
 
     void send_message(const std::string &message)
     {
-        send(client_fd, message.c_str(), message.size(), 0);
+        std::string final_message = message + msg_end_marker;
+        std::cout << "Wysylam: " << final_message << std::endl;
+        send(client_fd, final_message.c_str(), final_message.size(), 0);
+    }
+
+    std::string extract_message(std::vector<char> &data)
+    {  
+
+        auto it = std::search(data.begin(), data.end(), msg_end_marker.begin(), msg_end_marker.end());
+        if (it == data.end())
+        {
+            return "";
+        }
+
+        std::string result(data.begin(), it);
+        data.erase(data.begin(), it + msg_end_marker.size());
+        return result;
     }
 
     std::string receive_message()
     {
-        char buffer[BUFFER_SIZE] = {0};
-        ssize_t bytes_received = recv(client_fd, buffer, BUFFER_SIZE - 1, 0);
+        char buffer[BUFFER_SIZE] = {};
+        ssize_t bytes_received = recv(client_fd, buffer, BUFFER_SIZE, 0);
+
         if (bytes_received <= 0)
         {
             return "";
         }
-        buffer[bytes_received] = '\0';
-        return std::string(buffer);
+        //msg_in.insert(msg_in.end(), buffer, buffer + bytes_received);
+        
+        std::string s(buffer);
+        //std::string message = extract_message(msg_in);
+
+        /*
+        char buffer[BUFFER_SIZE] = {0};
+        ssize_t bytes_received = recv(client_fd, buffer, BUFFER_SIZE - 1, 0);
+        std::string recived_data;
+        std::string complete; 
+        if (bytes_received <= 0)
+        {
+            return "";
+        } else {
+            recived_data.append(buffer, bytes_received);
+            std::cout << "recived_data: " << recived_data << std::endl;
+            size_t pos;
+            while((pos==recived_data.find("\t\t")) != std::string::npos) {
+                complete = recived_data.substr(0,pos);
+                recived_data.erase(0, pos + 1);
+            }
+            std::cout << "Po recived_data: " << complete << std::endl;
+
+        }
+        //buffer[bytes_received] = '\0';
+        */
+        return s;
+    }
+
+
+    void set_card_texture(sf::Sprite &sprite, int position) {
+        sprite.setTexture(textures[curr_lobby.players[position].card_symbol]);
     }
 
     void in_lobby_screen(sf::RenderWindow &window) {
 
+
+        //std::cout << "WSZEDLEM" << std::endl;
         window.clear(sf::Color(30, 30, 30));
 
 
@@ -184,6 +291,8 @@ public:
 
            // Start Game button
         sf::RectangleShape start_btn;
+        // Turn card button
+        sf::RectangleShape turnCardBtn;
 
         start_btn.setSize(sf::Vector2f(150, 60));
         start_btn.setFillColor(sf::Color(169, 169, 169));
@@ -213,9 +322,72 @@ public:
         } else {
             show_warrning = false;
         }
+        //std::cout << "Po clockach" << std::endl;
+
+
+        // Inform about outward card
+        if(is_outward_card && outwardClock.getElapsedTime().asSeconds() < 1) {
+
+            sf::Text outwardMsg; 
+            outwardMsg.setFont(font);
+            outwardMsg.setString("Outward card has appeard! All cards have been turend up!");
+            outwardMsg.setCharacterSize(20);
+            outwardMsg.setFillColor(sf::Color::White);
+            outwardMsg.setPosition(200, 200);
+            window.draw(outwardMsg);
+        } else {
+            is_outward_card = false;
+        }
+
+
+        if(game_started && gameStartedClock.getElapsedTime().asSeconds() < 2) {
+            sf::Text gameStarted;
+            gameStarted.setFont(font);
+            gameStarted.setString("Game Started! Good luck!");
+            gameStarted.setCharacterSize(24);
+            gameStarted.setFillColor(sf::Color::Red);
+            gameStarted.setPosition(215, 115);
+            window.draw(gameStarted);
+        };
+
+        if(game_started && can_trun_card) {
+            // make button green
+           // sf::RectangleShape turnCardBtn;
+            turnCardBtn.setSize(sf::Vector2f(100, 60));
+            turnCardBtn.setFillColor(sf::Color(100, 200, 100));
+            turnCardBtn.setPosition(320, 375);
+
+            sf::Text turnText; 
+            turnText.setFont(font);
+            turnText.setString("Pleas turn you card!");
+            turnText.setCharacterSize(12);
+            turnText.setFillColor(sf::Color::White);
+            turnText.setPosition(335, 405);
+
+            window.draw(turnCardBtn);
+            window.draw(turnText);
+
+        } else if(game_started && !can_trun_card) {
+            //make button gray
+                        // make button green
+            turnCardBtn.setSize(sf::Vector2f(100, 60));
+            turnCardBtn.setFillColor(sf::Color(169, 169, 169));
+            turnCardBtn.setPosition(320, 375);
+
+            sf::Text turnText; 
+            turnText.setFont(font);
+            turnText.setString("Wait for your turn");
+            turnText.setCharacterSize(12);
+            turnText.setFillColor(sf::Color::White);
+            turnText.setPosition(335, 405);
+
+            window.draw(turnCardBtn);
+            window.draw(turnText);
+        }
 
         spriteHidden.setTexture(textures[0]);
-        spriteShown.setTexture(textures[0]);
+        //spriteShown.setTexture(textures[0]);
+        //set_card_texture(spriteShown);
         while (window.pollEvent(event)) {
                 if (event.type == sf::Event::Closed)
                     window.close();
@@ -224,14 +396,27 @@ public:
                 if (event.type == sf::Event::MouseButtonPressed) {
                             if (event.mouseButton.button == sf::Mouse::Left) {
 
-                                if (isClicked(start_btn, sf::Mouse::getPosition(window))) {
-
-                                    if(curr_lobby.usernames.size() < 4) {
+                                if (isClicked(start_btn, sf::Mouse::getPosition(window)) && !game_started) {
+                                    std::cout << curr_lobby.players.size() << std::endl;
+                                    if(curr_lobby.players.size() < 2) {
                                         show_warrning = true;
                                         clock.restart();
                                     } else {
                                         start_game();
                                     }
+                                }
+                                if (isClicked(turnCardBtn, sf::Mouse::getPosition(window))) {
+                                    std::cout << "Klikinieto obrco karte" << std::endl;
+                                    std::cout << curr_lobby.current_player_turn_fd  << std::endl;
+                                    std::cout << curr_lobby.my_fd << std::endl;
+                                    send_turn_card();      
+
+                                    /*
+                                    if(curr_lobby.current_player_turn_fd == curr_lobby.my_fd) {
+                                        std::cout << "Wysylamy turn_card" << std::endl;
+                                        send_turn_card();      
+                                    }
+                                    */
                                 }
                                 // Pobieramy pozycję kursora
                                 sf::Vector2i position = sf::Mouse::getPosition(window);
@@ -240,6 +425,12 @@ public:
                                 std::cout << "Pozycja kliknięcia: (" << position.x << ", " << position.y << ")\n";
                                 continue;
                     }
+                } if ((event.type == sf::Event::KeyPressed) && game_started) {
+                    if (event.key.code == sf::Keyboard::Space) {
+                        std::cout << "wcisnieto spacje" << std::endl;
+                        catch_totem_window();
+                    }
+
                 }
             } 
 
@@ -270,8 +461,10 @@ public:
             
             sf::Text playerText;
             playerText.setFont(font);
-            playerText.setString(curr_lobby.usernames[form_first++]);
-            
+            //std::cout << "Przed curr lobby" << std::endl;
+
+            playerText.setString(curr_lobby.players[form_first].username);
+            //std::cout << "Po curr lobby" << std::endl;
             playerText.setCharacterSize(18);
             playerText.setFillColor(sf::Color::White);
             playerText.setPosition(x_pos, y_pos);
@@ -284,16 +477,26 @@ public:
 
             spriteShown.setPosition(shown_card_x,shown_card_y);
             spriteShown.setRotation(rotation);
-                      
-            window.draw(playerText);
-            window.draw(spriteHidden);
-            window.draw(spriteShown);
-        }
+            set_card_texture(spriteShown, form_first);
 
-        for(int i=0;i<curr_lobby.usernames.size() - position_in_game - 1;i++) {
+            window.draw(playerText);
+            
+            //if(curr_lobby.down_amount>0) window.draw(spriteHidden);
+            //if(curr_lobby.up_amount>0) window.draw(spriteShown);
+            //std::cout << "PLAYER: " << curr_lobby.players[form_first].fd << " " << curr_lobby.players[form_first].has_up_cards << " "
+            //<< curr_lobby.players[form_first].has_down_cards << std::endl;
+            if(curr_lobby.players[form_first].has_up_cards) window.draw(spriteShown);
+            if(curr_lobby.players[form_first].has_down_cards) window.draw(spriteHidden);
+
+            form_first++;
+            
+        }
+        //int curr_num = curr_lobby.players.size();
+        int from_last = 0;
+        for(int i=position_in_game + 1;i<curr_lobby.players.size();i++) {
             //std::cout << "WSZEDLEM: " << curr_lobby.usernames.size() - position_in_game << std::endl;
 
-            get_card_position(7-i, x_pos, y_pos, rotation,
+            get_card_position(7-from_last, x_pos, y_pos, rotation,
                      hidden_card_x, hidden_card_y,
                      shown_card_x, shown_card_y);
 
@@ -301,35 +504,40 @@ public:
             //std::cout << "W lobby sa starsi uzytkownicy: " << curr_lobby.usernames.size() - position_in_game << std::endl;
             sf::Text playerText;
             playerText.setFont(font);
-            int curr_num = curr_lobby.usernames.size();
-            playerText.setString(curr_lobby.usernames[curr_num - 1]);
+            playerText.setString(curr_lobby.players[i].username);
             
             playerText.setCharacterSize(18);
             playerText.setFillColor(sf::Color::White);
             playerText.setPosition(x_pos, y_pos);
             playerText.setRotation(rotation);
             //Setting cards on screen
+            
+
             spriteHidden.setPosition(hidden_card_x,hidden_card_y);
             spriteHidden.setRotation(rotation);
 
 
             spriteShown.setPosition(shown_card_x,shown_card_y);
             spriteShown.setRotation(rotation);
-
+            
+            
+            set_card_texture(spriteShown,i);
+            
             window.draw(playerText);
-            window.draw(spriteHidden);
-            window.draw(spriteShown);
+            if(curr_lobby.players[i].has_up_cards) window.draw(spriteShown);
+            if(curr_lobby.players[i].has_down_cards) window.draw(spriteHidden);
+            
+            
         }
 
 
            // Showing if game can be startet
             sf::Text playerNuminfo;
             playerNuminfo.setFont(font);
-            playerNuminfo.setFont(font);
             playerNuminfo.setCharacterSize(12);
             playerNuminfo.setFillColor(sf::Color(169, 169, 169)); // Grey color
             playerNuminfo.setPosition(300, 330);
-            if(curr_lobby.usernames.size() < 4) {
+            if(curr_lobby.players.size() < 4) {
                 playerNuminfo.setString(WAIT_MSG);
                 startText.setFillColor(sf::Color::White);
 
@@ -358,11 +566,62 @@ public:
             }
 
 
-            window.draw(start_btn);
-            window.draw(startText);
 
-            window.draw(playerNuminfo);
-            window.draw(ownerMsg);
+            if(!game_started) {
+                window.draw(start_btn);
+                window.draw(startText);
+                window.draw(playerNuminfo);
+                window.draw(ownerMsg);
+
+            } else {
+                sf::Text upCount;
+                sf::Text downCount;
+                sf::Text middleCount;
+                std::string s;
+
+                int x_start_pos = 220;
+
+                upCount.setFont(font);
+                upCount.setCharacterSize(8);
+                upCount.setFillColor(sf::Color(sf::Color::White)); // Grey color
+
+                s = "Cards up: " + std::to_string(curr_lobby.up_amount);
+                upCount.setPosition(x_start_pos, 355);
+                upCount.setString(s);
+                x_start_pos = x_start_pos + s.size()*8 + 10;
+
+                downCount.setFont(font);
+                downCount.setCharacterSize(8);
+                downCount.setFillColor(sf::Color(sf::Color::White)); // Grey color
+                downCount.setPosition(x_start_pos, 355);
+                s = "Card down: " +  std::to_string(curr_lobby.down_amount);
+                downCount.setString(s);
+                x_start_pos = x_start_pos + s.size()*8 + 10;
+
+
+                middleCount.setFont(font);
+                middleCount.setCharacterSize(8);
+                middleCount.setFillColor(sf::Color(sf::Color::White)); // Grey color
+                middleCount .setPosition(x_start_pos, 355);
+                s = "Card middle: " +  std::to_string(curr_lobby.middle_amount);
+                middleCount.setString(s);
+
+
+                sf::Text currTurnPlayer;
+                currTurnPlayer.setFont(font);
+                currTurnPlayer.setCharacterSize(10);
+                currTurnPlayer.setFillColor(sf::Color(sf::Color::White)); // Grey color
+                currTurnPlayer .setPosition(165, 290);
+                s = "Player's trun: " +  std::to_string(curr_lobby.current_player_turn_fd);
+                currTurnPlayer.setString(s);
+
+                window.draw(currTurnPlayer);
+                window.draw(upCount);
+                window.draw(middleCount);
+                window.draw(downCount);
+
+            }
+
 
          //   window.draw(playerText);
            // window.draw(spriteHidden);
@@ -520,19 +779,32 @@ public:
         if(msg.find("}{") != std::string::npos) {
             std::cout << "Znaleziono " << std::endl;
             std::istringstream stream(msg);
+            std::cout << "Stworzono stream " << std::endl;
+            //std::cout << "msg: " << msg << std::endl;
+
+            std::string temp_msg;
             std::string root; 
 
-            size_t start;
+            temp_msg = msg;
+
+            size_t start = 0;
             size_t end;
 
-            while ((end = msg.find("}{", start)) != std::string::npos)  {
-                std::cout << root << " ";
-                result.push_back(json::parse(root.substr(start, end - start + 1)));
-                start = end + 2;
+            while ((end = temp_msg.find("}{", start)) != std::string::npos)  {
+                root = temp_msg.substr(start, end - start + 1);
+                std::cout << temp_msg << " " << std::endl;
+                temp_msg = temp_msg.substr(end - start + 1, temp_msg.size());
+                std::cout << temp_msg << " " << std::endl;
+                result.push_back(json::parse(root));
             }
+            std::cout << "Pozostala wiadomosc: " << temp_msg << std::endl;
+            root = temp_msg;
+            std::cout << root << " " << std::endl;
+            result.push_back(json::parse(root));
             return result;
         } else {
             result.push_back(json::parse(msg));
+            std::cout << "Parse: Tutaj ok" << std::endl; 
             return result;
         }
 
@@ -589,11 +861,199 @@ public:
                 std::cout << "Wychodzimy z IN_LOBBY_UPDATE" << std::endl;
             } else if (action == "START") {
                 std::cout << "Game started sucesfully" << std::endl;
+                game_started = true;
+                gameStartedClock.restart();
+            } else if(action == "CAN_TURN_CARD") {
+                // Msg only recived by one player
+                set_can_trun_card(true);
+            } else if(action == "TURNED_CARD") {
+                // MSG for all players
+                // turn card for player
+                turn_card_response(root);
+            } else if(action == "CARDS_COUNTS"){
+            // Set cards from msg;
+            // After every itteration
+            // Only gives state of you own cards;
+                cards_count_response(root);
+
+            } else if(action == "NEXT_TURN") {
+                // Set next turn player. 
+                // Sendet to all players
+                // Show player whose turn it is
+               // std::cout << "USTWIAMY TURE" << std::endl;
+                next_turn_response(root);
+
+            } else if(action == "TOTEM") {
+                // HELD OR NOT HELD
+                totem_response(root);
+            } else if(action == "OUTWARDS_ARROWS_TURNED_CARDS") {
+                // Make msg that it will began shorty and then turn all cords at once
+                //std::cout << "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" << std::endl;
+                is_outward_card = true;
+                parse_players_by_fd_outward(root);
+                outwardClock.restart();
+            } else if(action == "DUEL") {
+                duel_respones(root);
             }
         }
         }
     }
 private:
+
+    void duel_respones(json &root) {
+        std::cout << "DUEEEEEEEEEEEEEEEEEEEEEEEEL!!!!!!!!!!!!!!!!!" << std::endl;
+        //onw einwer, many loser;
+        int winner = root["winner"].get<int>();
+        std::vector<int> losers = root["losers"].get<std::vector<int>>();
+        for(auto &i : losers) {
+            std::cout << "Losers: " << i << std::endl;
+        };
+
+    };
+
+    void outwards_response() {
+
+    }
+
+    // Funkcja do przetwarzania playerow przez fd
+    //Jedna jest od ustawienia up and down bool values zeby pokazywac karty lub nie
+    // Druga to update karty playera
+
+    void parse_players_by_fd_outward(json &root) {
+        for(auto &p : curr_lobby.players) {
+
+            //std::cout << "WCZESNIEJSZY SYMBOL GRACZA -------->" << p.up_card_symbol << std::endl;
+
+            p.up_card_symbol = root[std::to_string(p.fd)].get<std::string>();
+
+            //std::cout << "Obecny SYMBOL GRACZA -------->" << p.up_card_symbol << std::endl;
+        }
+    }
+
+    void parse_players_by_fd_count(json &root) {
+
+        std::string up,down;
+        //std::cout << "Ustawiamy booleona graczy" << std::endl;
+        for(auto &p : curr_lobby.players) {
+
+            std::istringstream iss(root[std::to_string(p.fd)].get<std::string>());
+            iss >> up >> down;
+            
+           // std::cout << "Zajmujemy sie graczem: " << p.fd << std::endl;
+            p.has_up_cards = (up == "true") ? true : false;
+            p.has_down_cards = (down == "true") ? true : false;
+           // std::cout << "!!!!!!!!!!!!!!!Players bool: " <<  p.has_up_cards << p.has_down_cards << std::endl;
+        }
+
+    }
+
+    void set_can_trun_card(bool status) {
+        can_trun_card = status;
+    }
+
+    void send_turn_card() {
+        json request;
+        request["action"] = "TURN_CARD";
+        send_message(request.dump());
+    }
+
+    void totem_response(json &root) {
+        curr_lobby.totem_held = root["held"].get<bool>();
+        if(curr_lobby.totem_held) {
+            root["by"].get<int>();
+        };
+    }
+
+    void next_turn_response(json &root) {
+        curr_lobby.current_player_turn_fd = root["next_player"].get<int>();
+        std::cout << "Curr turn: " << curr_lobby.current_player_turn_fd  << std::endl;
+        if(curr_lobby.current_player_turn_fd == curr_lobby.my_fd) {
+            can_trun_card = true;
+        } else {
+            can_trun_card = false;
+        }
+
+    }
+
+    void turn_card_response(json &root) {
+        int player_fd = root["by"].get<int>();
+
+        //TO cahnge to int
+        std::string card = root["card"].get<std::string>();
+
+
+        for(auto &player : curr_lobby.players) { 
+            if(player.fd == player_fd) {
+                player.up_card_symbol = card;
+                //std::cout << " Pokazywana karta -------------->" << card << std::endl;
+                find_new_card(card, player);
+                break;
+            }
+        }
+    }
+
+    void find_new_card(std::string card, Player &player) {
+        
+
+
+        if (card == "outward_arrows") {
+            player.card_symbol = 1;
+        } else if(card == "circle_inside_x_blue") {
+            player.card_symbol = 2;
+        } else if(card == "circle_inside_x_red") {
+            player.card_symbol = 3;
+        } else if(card == "circle_inside_x_yellow") {
+            player.card_symbol = 4;
+        } else if(card == "circle_inside_x_green") {
+            player.card_symbol = 5;
+        } else if(card == "circle_whole_x_blue") {
+            player.card_symbol = 6;
+        } else if(card == "circle_whole_x_red") {
+            player.card_symbol = 7;
+        } else if(card == "circle_whole_x_yellow") {
+            player.card_symbol = 8;
+        } else if(card == "circle_whole_x_green") {
+            player.card_symbol = 9;
+        } else {
+            std::cerr << "Nieznana karta: " << card << std::endl;
+        }
+    }
+
+
+    void cards_count_response(json &root) {
+
+        parse_players_by_fd_count(root);
+        curr_lobby.up_amount = root["up"].get<int>();
+        curr_lobby.down_amount = root["down"].get<int>();
+        curr_lobby.middle_amount = root["middle"].get<int>();
+
+
+        /*
+        if(curr_lobby.up_amount == 0) {
+            curr_lobby.players[curr_lobby.my_position].has_up_cards = false;
+        } else {
+            curr_lobby.players[curr_lobby.my_position].has_up_cards = true;
+        }
+
+        curr_lobby.down_amount = root["down"].get<int>();
+        if(curr_lobby.down_amount == 0) {
+            curr_lobby.players[curr_lobby.my_position].has_down_cards = false;
+        } else {
+            curr_lobby.players[curr_lobby.my_position].has_down_cards = true;
+        }
+
+        curr_lobby.middle_amount = root["middle"].get<int>();
+        if(curr_lobby.middle_amount == 0) {
+            curr_lobby.cards_in_the_middle = false;
+        } else {
+            curr_lobby.cards_in_the_middle = true;
+        }*/
+
+        std::cout << "Up: " << curr_lobby.up_amount << std::endl;
+        std::cout << "Down: " << curr_lobby.down_amount << std::endl;
+        std::cout << "Middle: " << curr_lobby.middle_amount << std::endl;
+    }
+
     void display_menu()
     {
         std::cout << "\n--- Jungle Speed Client ---\n";
@@ -641,11 +1101,14 @@ private:
             std::cout << "Game created with ID: " << root["game_id"].get<int>() << "\n";
             std::cout << "Position: " << root["position"].get<int>() << "\n";
 
-            setup_usernames(root["usernames"].get<std::string>());
+            setup_usernames(root);
+            setup_players(root);
             position_in_game = root["position"].get<int>();
             set_is_owner(true);
             set_in_game(true);
             curr_lobby.owner_name = root["owner"].get<std::string>();
+            //curr_lobby.my_position = root["position"].get<int>();
+            std::cout << "Stworzono lobby" << std::endl;
         }
         else
         {
@@ -656,10 +1119,17 @@ private:
     }
 
     void in_lobby_update(json &root) {
-        setup_usernames(root["usernames"].get<std::string>());
+        setup_usernames(root);
+        setup_players(root);
         std::cout << "Po updacie w lobby znajduej sie: " << curr_lobby.usernames.size() << std::endl;
         setup_owner(root["owner"].get<std::string>());
 
+    }
+
+    //void 
+
+    void setup_usernames(json &root) {
+        curr_lobby.usernames = split_msg(root["usernames"].get<std::string>());
     }
 
     void create_game()
@@ -696,11 +1166,38 @@ private:
         send_message(request.dump());
     }
 
-   
+    void create_players_list(std::vector<std::string> &u, std::vector<std::string> &f) {
+        
+        std::vector<Player> temp_players;
+
+        for(int i = 0; i<u.size();i++) {
+            Player player;
+            int fd = std::stoi(f[i]);
+            player.fd = fd;
+            player.username = u[i];
+
+            temp_players.push_back(player);
+        }
+
+        curr_lobby.players = temp_players;
+    };
+
+    void setup_players(json &root) {
+        std::vector<std::string> temp_usernames = split_msg(root["usernames"].get<std::string>());
+        std::vector<std::string> temp_fds = split_msg(root["fds"].get<std::string>());
+        create_players_list(temp_usernames, temp_fds);
+    }
 
     void join_game_response(json &root) {
         std::cout << "Obecni gracze: " <<root["usernames"].get<std::string>() << std::endl;
-        setup_usernames(root["usernames"].get<std::string>());
+        
+        setup_players(root);
+        for(auto &p : curr_lobby.players) {
+            std::cout << "Gracze w players: " << p.username << std::endl;
+        }
+
+        curr_lobby.usernames = split_msg(root["usernames"].get<std::string>());
+
         std::cout << "pozycja: " <<root["position"].get<int>() << std::endl;
         position_in_game = root["position"].get<int>();
         curr_lobby.owner_name = root["owner"].get<std::string>();
@@ -733,6 +1230,14 @@ private:
             std::cout << "No response from server.\n";
         }
     }
+
+      void catch_totem_window() {
+        auto timestamp = get_current_timestamp();
+        json request;
+        request["action"] = "CATCH_TOTEM";
+        request["timestamp"] = timestamp;
+        send_message(request.dump());
+      }
 
     void catch_totem()
     {
@@ -777,19 +1282,18 @@ private:
         is_owner = state;
     }
 
-    void setup_usernames(std::string usernames) {
+    std::vector<std::string> split_msg(std::string usernames) {
         std::vector<std::string> words; 
         std::istringstream stream(usernames);
         std::string word; 
-
 
         // Dzielimy string na wyrazy, używając strumienia
         while (stream >> word) {
             std::cout << word << " ";
             words.push_back(word); // Dodajemy każdy wyraz do wektora
         }
-        std::cout << std::endl;
-        curr_lobby.usernames = words;
+
+        return words;
     }
 
     void setup_owner(std::string name) {
@@ -813,6 +1317,7 @@ private:
             {
                 std::cout << "Nick: " << root["username"].get<std::string>() << "\n";
                 username = root["username"].get<std::string>();
+                curr_lobby.my_fd = root["id"].get<int>();
             }
         }
         else
