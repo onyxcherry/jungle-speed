@@ -155,18 +155,30 @@ class JungleSpeedClient
     int shown_card_symbol= false;
 
 
+    bool failure_screen = false;
+
+    
+    std::string failure_msg;
+
     std::vector<char> msg_in{};
 public:
+
+    bool success_in_connect = false;    
+
     JungleSpeedClient(const std::string &ip, uint16_t port)
     {
         client_fd = socket(AF_INET, SOCK_STREAM, 0);
+        std::cout << "fd:" << client_fd << std::endl;
         in_game = false;
         if (client_fd == -1)
         {
             perror("Socket creation failed");
-            exit(EXIT_FAILURE);
+            failure_msg = "Socket creation failed";
+            failure_screen = true;
+            //exit(EXIT_FAILURE);
+            return;
         }
-
+        success_in_connect = true;
         server_addr.sin_family = AF_INET;
         server_addr.sin_port = htons(port);
         inet_pton(AF_INET, ip.c_str(), &server_addr.sin_addr);
@@ -275,9 +287,13 @@ public:
     {
         if (connect(client_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1)
         {
+            failure_screen = true;
+            in_game = false;
             perror("Connection failed");
             close(client_fd);
-            exit(EXIT_FAILURE);
+            failure_screen = true;
+            failure_msg = "Connection failed";
+            //exit(EXIT_FAILURE);
         }
         std::cout << "Connected to server.\n";
     }
@@ -809,11 +825,25 @@ public:
         while (window.isOpen()) {
             if(in_game) {
                 in_lobby_screen(window);
-            } else {
+            } else if(failure_screen) {
+                sf::Event event;
+                while (window.pollEvent(event)) {
+                    // Obsługa zdarzeń
+                    if (event.type == sf::Event::Closed) {
+                        window.close();
+                    }
+                }
+                window.clear(sf::Color(30, 30, 30));
+                sf::Text info = createText(font, failure_msg, 32);
+                info.setPosition(set_in_the_middle(info.getGlobalBounds()));
+                window.draw(info);
+            }
+            else {
                 chose_screen(window);
             }
             window.display();
          }            
+         std::exit(0);
     }
 
     void run()
@@ -826,53 +856,8 @@ public:
         });        
 
         receiver.detach();
-        list_games();
-        while (true) {
-            int choice;
-            if(in_game) {
-                display_game_window();
-                std::cin >> choice;
-                if (choice == 1) {
-                    
-                } else if (choice == 2) {
-                    set_in_game(false);
-                };
 
-            } else {    
-
-                display_menu();
-                std::cin >> choice;
-
-                if (choice == 1)
-                {
-                    list_games();
-                }
-                else if (choice == 2)
-                {
-                    create_game();
-                }
-                else if (choice == 3)
-                {
-                    join_game();
-                }
-                else if (choice == 4)
-                {
-                    turn_card();
-                }
-                else if (choice == 5)
-                {
-                    catch_totem();
-                }
-                else if (choice == 0)
-                {
-                    break;
-                }
-                else
-                {
-                    std::cout << "Invalid option. Try again.\n";
-                }
-            }
-         }            
+        while (true) {};         
         close(client_fd);
     }
 
@@ -940,6 +925,9 @@ public:
         }
         else
         {
+            in_game = false;
+            failure_screen = true;
+            failure_msg = "No connection with server.";
             std::cout << "No response from server.\n";
             return;
         }
@@ -1385,6 +1373,9 @@ private:
         }
         else
         {
+            in_game = false;
+            failure_screen = true;
+            failure_msg = "No connection with server.";
             std::cout << "No response from server.\n";
         }
     }
@@ -1420,6 +1411,9 @@ private:
         }
         else
         {
+            in_game = false;
+            failure_screen = true;
+            failure_msg = "No connection with server.";
             std::cout << "No response from server.\n";
         }
     }
@@ -1480,6 +1474,9 @@ private:
         }
         else
         {
+            in_game = false;
+            failure_screen = true;
+            failure_msg = "No connection with server.";
             std::cout << "No response from server.\n";
         }
     }
@@ -1621,7 +1618,8 @@ int main(int argc, char *argv[])
     JungleSpeedClient client(ip, port);
     std::thread t1([&]() { client.run_window(); });
     t1.detach();
-    client.run();
+    std::cout << client.success_in_connect << std::endl;
+    if(client.success_in_connect) client.run();
     return 0;
 }
 
