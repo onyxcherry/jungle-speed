@@ -13,7 +13,7 @@
 #define BUFFER_SIZE 1024
 #define WINDOW_WIDTH 800
 #define WINDOW_LENGHT 600
-
+#define MAX_GAMES_COUNT 8
 const std::string msg_end_marker = "\t\t";
 
 using json = nlohmann::json;
@@ -766,14 +766,22 @@ public:
 
         // Join button
         sf::RectangleShape join_btn;
-
+        sf::Text StartText; 
+        if(lobbyList.size()<MAX_GAMES_COUNT) {
         join_btn.setSize(sf::Vector2f(100, 40));
         join_btn.setFillColor(sf::Color(100, 200, 100));
         join_btn.setPosition(350, 550);
-        // Dodanie napisu "Dołącz" na przycisku
-        sf::Text StartText = createText(font, "Start", 16,
+        StartText = createText(font, "Create", 16,
                                     sf::Vector2f(380,
                                                 560));
+        StartText.setPosition(center_in_button(join_btn,StartText.getGlobalBounds()));
+        } else {
+        StartText = createText(font, "Maximum number of lobbies", 16,
+                                    sf::Vector2f(380,
+                                                560));
+        StartText.setPosition(set_in_the_middle(StartText.getGlobalBounds(), 0, 280));
+        }
+        
         while (window.pollEvent(event)) {
                 if (event.type == sf::Event::Closed)
                     window.close();
@@ -806,8 +814,8 @@ public:
                 window.draw(lobby.button);
 
                 // Dodanie napisu "Dołącz" na przycisku
-                sf::Text joinText = createText(font, "Dolacz", 20,
-                                            sf::Vector2f(lobby.button.getPosition().x + 30,
+                sf::Text joinText = createText(font, "Join", 20,
+                                            sf::Vector2f(lobby.button.getPosition().x + 55,
                                                         lobby.button.getPosition().y + 5));
                 window.draw(joinText);
             }
@@ -854,7 +862,7 @@ public:
         std::thread receiver([this]() {
             handle_response();
         });        
-
+        list_games();
         receiver.detach();
 
         while (true) {};         
@@ -1222,7 +1230,7 @@ private:
                           << " | Players: " << game["player_count"].get<int>()
                           << " | Started: " << (game["is_started"].get<bool>() ? "Yes" : "No")
                           << "\n";
-                temp_lobby_list.push_back(createLobby(game["game_id"].get<int>(), game["player_count"].get<int>(), font, sf::Vector2f(50, 100 + temp_lobby_list.size() * 70)));
+                temp_lobby_list.push_back(createLobby(game["game_id"].get<int>(), game["player_count"].get<int>(), font, sf::Vector2f(50, 20 + temp_lobby_list.size() * 70)));
         }
         lobbyList = std::move(temp_lobby_list);
     }

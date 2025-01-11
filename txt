@@ -1,3 +1,4 @@
 g++ -o test test.cpp -lsfml-graphics -lsfml-window -lsfml-system
 g++ -o test test.cpp -lsfml-graphics -lsfml-window -lsfml-system
 g++ -o test test.cpp -lsfml-graphics -lsfml-window -lsfml-system
+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
