@@ -42,6 +42,16 @@ struct Player {
 
 };
 
+    sf::Text createText(const sf::Font& font, const std::string& str, int size, sf::Vector2f pos, sf::Color color = sf::Color::White) {
+        sf::Text text;
+        text.setFont(font);
+        text.setString(str);
+        text.setCharacterSize(size);
+        text.setFillColor(color);
+        text.setPosition(pos);
+        return text;
+    };
+
 struct InLobby {
     sf::RectangleShape StartButton;
     sf::Text GameInfo; 
@@ -75,15 +85,6 @@ bool isClicked(const sf::RectangleShape& button, sf::Vector2i mousePos) {
     return button.getGlobalBounds().contains(sf::Vector2f(mousePos));
 };
 
-sf::Text createText(const sf::Font& font, const std::string& str, int size, sf::Vector2f pos) {
-    sf::Text text;
-    text.setFont(font);
-    text.setString(str);
-    text.setCharacterSize(size);
-    text.setFillColor(sf::Color::White);
-    text.setPosition(pos);
-    return text;
-};
 
 Lobby createLobby(int id, int players, const sf::Font& font, sf::Vector2f position) {
     Lobby lobby;
@@ -159,23 +160,38 @@ public:
         server_addr.sin_family = AF_INET;
         server_addr.sin_port = htons(port);
         inet_pton(AF_INET, ip.c_str(), &server_addr.sin_addr);
-        setup_textures("img"); //0
-        setup_textures("outward_arrows"); //1
 
-        setup_textures("circle_inside_x_blue"); //2
-        setup_textures("circle_inside_x_red"); //3
-        setup_textures("circle_inside_x_yellow"); //4
-        setup_textures("circle_inside_x_green"); //5
-        setup_textures("circle_whole_x_blue"); //6
-        setup_textures("circle_whole_x_red"); //7
-        setup_textures("circle_whole_x_yellow"); //8
-        setup_textures("circle_whole_x_green"); //9
-
-
+        setup_textures();
 
     }
 
-    bool setup_textures(std:: string name) {
+
+    void setup_textures() {
+        load_textures("img"); //0
+        load_textures("outward_arrows"); //1
+        load_textures("circle_inside_x_blue"); //2
+        load_textures("circle_inside_x_red"); //3
+        load_textures("circle_inside_x_yellow"); //4
+        load_textures("circle_inside_x_green"); //5
+        load_textures("circle_whole_x_blue"); //6
+        load_textures("circle_whole_x_red"); //7
+        load_textures("circle_whole_x_yellow"); //8
+        load_textures("circle_whole_x_green"); //9
+        load_textures("totem"); //10
+
+    }
+
+
+    sf::Vector2f set_in_the_middle(sf::FloatRect bounds) {
+        int y_pos = 300 - (bounds.height/2);
+        int x_pos = 400 - (bounds.width/2);
+
+        return sf::Vector2f(x_pos,y_pos);
+
+    }
+
+    // TODO: Make it so flase stops program
+    bool load_textures(std:: string name) {
         sf::Texture tex;
         sf::Image image;
         sf::Image scaledImage;
@@ -216,7 +232,6 @@ public:
     void send_message(const std::string &message)
     {
         std::string final_message = message + msg_end_marker;
-        std::cout << "Wysylam: " << final_message << std::endl;
         send(client_fd, final_message.c_str(), final_message.size(), 0);
     }
 
@@ -291,8 +306,6 @@ public:
 
            // Start Game button
         sf::RectangleShape start_btn;
-        // Turn card button
-        sf::RectangleShape turnCardBtn;
 
         start_btn.setSize(sf::Vector2f(150, 60));
         start_btn.setFillColor(sf::Color(169, 169, 169));
@@ -303,87 +316,19 @@ public:
                                                 285));
 
         //Showing a flashing message 
-        if(show_warrning && clock.getElapsedTime().asSeconds() < 2 && curr_lobby.owner_name == username) {
-            sf::Text warning; 
-            warning.setFont(font);
-            warning.setString("Not enough players, cant start game");
-            warning.setCharacterSize(18);
-            warning.setFillColor(sf::Color::Red);
-            warning.setPosition(200, 200);
-            window.draw(warning);
-        } else if (show_warrning && clock.getElapsedTime().asSeconds() < 2 && curr_lobby.owner_name != username) {
-            sf::Text warning;
-            warning.setFont(font);
-            warning.setString("You are not an owner, you cant start game");
-            warning.setCharacterSize(18);
-            warning.setFillColor(sf::Color::Red);
-            warning.setPosition(200, 200);
-            window.draw(warning);
-        } else {
-            show_warrning = false;
-        }
-        //std::cout << "Po clockach" << std::endl;
+        start_warning_text(window);
+
+        //Inform players about outward card;
+        outward_card_text(window);
+        
+        //Infor players that game has started
+        game_started_info_text(window);
 
 
-        // Inform about outward card
-        if(is_outward_card && outwardClock.getElapsedTime().asSeconds() < 1) {
 
-            sf::Text outwardMsg; 
-            outwardMsg.setFont(font);
-            outwardMsg.setString("Outward card has appeard! All cards have been turend up!");
-            outwardMsg.setCharacterSize(20);
-            outwardMsg.setFillColor(sf::Color::White);
-            outwardMsg.setPosition(200, 200);
-            window.draw(outwardMsg);
-        } else {
-            is_outward_card = false;
-        }
+        // Turn card button
+        sf::RectangleShape turnCardBtn = turn_card_btn_and_text(window);
 
-
-        if(game_started && gameStartedClock.getElapsedTime().asSeconds() < 2) {
-            sf::Text gameStarted;
-            gameStarted.setFont(font);
-            gameStarted.setString("Game Started! Good luck!");
-            gameStarted.setCharacterSize(24);
-            gameStarted.setFillColor(sf::Color::Red);
-            gameStarted.setPosition(215, 115);
-            window.draw(gameStarted);
-        };
-
-        if(game_started && can_trun_card) {
-            // make button green
-           // sf::RectangleShape turnCardBtn;
-            turnCardBtn.setSize(sf::Vector2f(100, 60));
-            turnCardBtn.setFillColor(sf::Color(100, 200, 100));
-            turnCardBtn.setPosition(320, 375);
-
-            sf::Text turnText; 
-            turnText.setFont(font);
-            turnText.setString("Pleas turn you card!");
-            turnText.setCharacterSize(12);
-            turnText.setFillColor(sf::Color::White);
-            turnText.setPosition(335, 405);
-
-            window.draw(turnCardBtn);
-            window.draw(turnText);
-
-        } else if(game_started && !can_trun_card) {
-            //make button gray
-                        // make button green
-            turnCardBtn.setSize(sf::Vector2f(100, 60));
-            turnCardBtn.setFillColor(sf::Color(169, 169, 169));
-            turnCardBtn.setPosition(320, 375);
-
-            sf::Text turnText; 
-            turnText.setFont(font);
-            turnText.setString("Wait for your turn");
-            turnText.setCharacterSize(12);
-            turnText.setFillColor(sf::Color::White);
-            turnText.setPosition(335, 405);
-
-            window.draw(turnCardBtn);
-            window.draw(turnText);
-        }
 
         spriteHidden.setTexture(textures[0]);
         //spriteShown.setTexture(textures[0]);
@@ -410,19 +355,12 @@ public:
                                     std::cout << curr_lobby.current_player_turn_fd  << std::endl;
                                     std::cout << curr_lobby.my_fd << std::endl;
                                     send_turn_card();      
-
-                                    /*
-                                    if(curr_lobby.current_player_turn_fd == curr_lobby.my_fd) {
-                                        std::cout << "Wysylamy turn_card" << std::endl;
-                                        send_turn_card();      
-                                    }
-                                    */
                                 }
+
                                 // Pobieramy pozycję kursora
                                 sf::Vector2i position = sf::Mouse::getPosition(window);
-                                
-                                // Wypisujemy pozycję w konsoli
                                 std::cout << "Pozycja kliknięcia: (" << position.x << ", " << position.y << ")\n";
+                                
                                 continue;
                     }
                 } if ((event.type == sf::Event::KeyPressed) && game_started) {
@@ -458,16 +396,8 @@ public:
                      hidden_card_x, hidden_card_y,
                      shown_card_x, shown_card_y);
 
-            
-            sf::Text playerText;
-            playerText.setFont(font);
-            //std::cout << "Przed curr lobby" << std::endl;
-
-            playerText.setString(curr_lobby.players[form_first].username);
-            //std::cout << "Po curr lobby" << std::endl;
-            playerText.setCharacterSize(18);
-            playerText.setFillColor(sf::Color::White);
-            playerText.setPosition(x_pos, y_pos);
+            sf::Text playerText = createText(font, curr_lobby.players[form_first].username, 
+                18, sf::Vector2f(x_pos, y_pos), sf::Color::White);
             playerText.setRotation(rotation);
 
             //Setting cards on screen
@@ -480,9 +410,6 @@ public:
             set_card_texture(spriteShown, form_first);
 
             window.draw(playerText);
-            
-            //if(curr_lobby.down_amount>0) window.draw(spriteHidden);
-            //if(curr_lobby.up_amount>0) window.draw(spriteShown);
             //std::cout << "PLAYER: " << curr_lobby.players[form_first].fd << " " << curr_lobby.players[form_first].has_up_cards << " "
             //<< curr_lobby.players[form_first].has_down_cards << std::endl;
             if(curr_lobby.players[form_first].has_up_cards) window.draw(spriteShown);
@@ -501,17 +428,9 @@ public:
                      shown_card_x, shown_card_y);
 
 
-            //std::cout << "W lobby sa starsi uzytkownicy: " << curr_lobby.usernames.size() - position_in_game << std::endl;
-            sf::Text playerText;
-            playerText.setFont(font);
-            playerText.setString(curr_lobby.players[i].username);
-            
-            playerText.setCharacterSize(18);
-            playerText.setFillColor(sf::Color::White);
-            playerText.setPosition(x_pos, y_pos);
+            sf::Text playerText = createText(font, curr_lobby.players[i].username, 
+                18, sf::Vector2f(x_pos, y_pos), sf::Color::White);
             playerText.setRotation(rotation);
-            //Setting cards on screen
-            
 
             spriteHidden.setPosition(hidden_card_x,hidden_card_y);
             spriteHidden.setRotation(rotation);
@@ -526,120 +445,185 @@ public:
             window.draw(playerText);
             if(curr_lobby.players[i].has_up_cards) window.draw(spriteShown);
             if(curr_lobby.players[i].has_down_cards) window.draw(spriteHidden);
-            
-            
+            from_last++;
         }
 
-
-           // Showing if game can be startet
-            sf::Text playerNuminfo;
-            playerNuminfo.setFont(font);
-            playerNuminfo.setCharacterSize(12);
-            playerNuminfo.setFillColor(sf::Color(169, 169, 169)); // Grey color
-            playerNuminfo.setPosition(300, 330);
-            if(curr_lobby.players.size() < 4) {
-                playerNuminfo.setString(WAIT_MSG);
-                startText.setFillColor(sf::Color::White);
-
-            } else {
-                playerNuminfo.setString(ENOUGH_PLAYERS);
-                startText.setFillColor(sf::Color(100, 200, 100));
-            }
-
-            //Showing if players is Onwer
-            sf::Text ownerMsg;
-            ownerMsg.setFont(font);
-            ownerMsg.setCharacterSize(12);
-            ownerMsg.setFillColor(sf::Color(169, 169, 169)); // Grey color
-            ownerMsg.setPosition(330, 348);
-
-            if(curr_lobby.owner_name == username) {
-                //std::cout << "OWNER: " << curr_lobby.owner_name << std::endl;
-                //std::cout << "PLAYER: " << username << std::endl;
-                ownerMsg.setString(ONWER_YOU);
-            } else {
-                //std::cout << "OWNER: " << curr_lobby.owner_name << std::endl;
-                //std::cout << "PLAYER: " << username << std::endl;
-
-                std::string info_msg = ONWER_ELSE + curr_lobby.owner_name;
-                ownerMsg.setString(info_msg);
-            }
 
 
 
             if(!game_started) {
                 window.draw(start_btn);
                 window.draw(startText);
-                window.draw(playerNuminfo);
-                window.draw(ownerMsg);
+                //window.draw(playerNuminfo);
+                //window.draw(ownerMsg);
+                info_about_players_text(window);
+                owner_info_text(window);
 
             } else {
-                sf::Text upCount;
-                sf::Text downCount;
-                sf::Text middleCount;
-                std::string s;
-
-                int x_start_pos = 220;
-
-                upCount.setFont(font);
-                upCount.setCharacterSize(8);
-                upCount.setFillColor(sf::Color(sf::Color::White)); // Grey color
-
-                s = "Cards up: " + std::to_string(curr_lobby.up_amount);
-                upCount.setPosition(x_start_pos, 355);
-                upCount.setString(s);
-                x_start_pos = x_start_pos + s.size()*8 + 10;
-
-                downCount.setFont(font);
-                downCount.setCharacterSize(8);
-                downCount.setFillColor(sf::Color(sf::Color::White)); // Grey color
-                downCount.setPosition(x_start_pos, 355);
-                s = "Card down: " +  std::to_string(curr_lobby.down_amount);
-                downCount.setString(s);
-                x_start_pos = x_start_pos + s.size()*8 + 10;
-
-
-                middleCount.setFont(font);
-                middleCount.setCharacterSize(8);
-                middleCount.setFillColor(sf::Color(sf::Color::White)); // Grey color
-                middleCount .setPosition(x_start_pos, 355);
-                s = "Card middle: " +  std::to_string(curr_lobby.middle_amount);
-                middleCount.setString(s);
-
-
-                sf::Text currTurnPlayer;
-                currTurnPlayer.setFont(font);
-                currTurnPlayer.setCharacterSize(10);
-                currTurnPlayer.setFillColor(sf::Color(sf::Color::White)); // Grey color
-                currTurnPlayer .setPosition(165, 290);
-                s = "Player's trun: " +  std::to_string(curr_lobby.current_player_turn_fd);
-                currTurnPlayer.setString(s);
-
+                std::string s = "Player's trun: " +  std::to_string(curr_lobby.current_player_turn_fd);
+                cards_counters_text(window);
+                sf::Text currTurnPlayer = createText(font, s, 10, sf::Vector2f(165, 290), sf::Color::White);
+                
+                draw_totem(window);
                 window.draw(currTurnPlayer);
-                window.draw(upCount);
-                window.draw(middleCount);
-                window.draw(downCount);
+
 
             }
 
+        }
+       
 
-         //   window.draw(playerText);
-           // window.draw(spriteHidden);
-         //   window.draw(spriteShown);
+    //WSZSYTKIE FUNKCJIE DO WINDOWA
+
+    //Ustawinia texotw
+
+    sf::Text createText(const sf::Font& font, const std::string &str, int size, sf::Vector2f pos, sf::Color color = sf::Color::White) {
+        sf::Text text;
+        text.setFont(font);
+        text.setString(str);
+        text.setCharacterSize(size);
+        text.setFillColor(color);
+        text.setPosition(pos);
+        return text;
+    };
+
+
+    sf::RectangleShape createBtn(sf::Vector2f size, sf::Color color = sf::Color::White, sf::Vector2f pos = sf::Vector2f(0, 0)) {
+        sf::RectangleShape btn;
+        btn.setSize(size);
+        btn.setFillColor(color);
+        btn.setPosition(pos);
+        return btn;
+    }
+
+    // Text na przycisku czy mozna zaczac
+    void info_about_players_text(sf::RenderWindow &window) {
+        sf::Text playerNuminfo;
+        if(curr_lobby.players.size() < 2) {
+            playerNuminfo = createText(font, WAIT_MSG, 
+                12, sf::Vector2f(300, 330), sf::Color::White);
+        } else {
+            playerNuminfo = createText(font, ENOUGH_PLAYERS, 
+                12, sf::Vector2f(300, 330), sf::Color(100, 200, 100));
         }
-        /*
-        for(const std::string &name : curr_lobby.usernames) {
-            sf::Text playerText;
-            playerText.setFont(font);
-            playerText.setString(name);
-            playerText.setCharacterSize(24);
-            playerText.setFillColor(sf::Color::White);
-            playerText.setPosition(x_offset, 300 + i*50);
-            window.draw(playerText);
-            i++;
+        window.draw(playerNuminfo);
+    }
+
+
+    //
+    void draw_totem(sf::RenderWindow &window) {
+        sf::Sprite totem;
+        totem.setTexture(textures[10]);
+        totem.setPosition(set_in_the_middle(totem.getGlobalBounds()));
+        window.draw(totem);
+    }
+
+    // Setting up trun card btn and text
+    sf::RectangleShape turn_card_btn_and_text(sf::RenderWindow &window) {
+
+        sf::RectangleShape btn;
+        sf::Text text;
+        if(game_started && can_trun_card) {
+            btn = createBtn(sf::Vector2f(150, 60), sf::Color(100, 200, 100), sf::Vector2f(320,375));
+            text = createText(font, "Pleas turn you card!", 
+                12, sf::Vector2f(335, 405), sf::Color::White);
+        } else if(game_started && !can_trun_card) {
+            btn = createBtn(sf::Vector2f(150, 60),sf::Color(169, 169, 169), sf::Vector2f(320,375));
+            text = createText(font, "Wait for your turn", 
+                12, sf::Vector2f(335, 405), sf::Color::White);
+        } 
+        window.draw(btn);
+        window.draw(text);
+        return btn;
+    }
+    // Funtcions using clock
+    //Flashin warning after start game is clicked 
+    void start_warning_text(sf::RenderWindow &window) {
+        sf::Text warning; 
+        if(show_warrning && clock.getElapsedTime().asSeconds() < 2 && curr_lobby.owner_name == username) {
+            warning = createText(font, "Not enough players, cant start game", 
+                18, sf::Vector2f(200, 200), sf::Color::Red);
+            window.draw(warning);
+        } else if (show_warrning && clock.getElapsedTime().asSeconds() < 2 && curr_lobby.owner_name != username) {
+            warning = createText(font, "You are not an owner, you cant start game", 
+                18, sf::Vector2f(200, 200), sf::Color::Red);
+        } else {
+            show_warrning = false;
+            return;
         }
-*/
-    
+        window.draw(warning);
+    }
+
+    void outward_card_text(sf::RenderWindow &window) {
+        // Inform about outward card
+        if(is_outward_card && outwardClock.getElapsedTime().asSeconds() < 1) {
+
+            sf::Text outwardMsg = createText(font, "Outward card has appeard! All cards have been turend up!", 
+                18, sf::Vector2f(200, 200), sf::Color::Red);
+            
+            window.draw(outwardMsg);
+        } else {
+            is_outward_card = false;
+        }
+    }
+
+
+    //Flashing msg that game has started
+    void game_started_info_text(sf::RenderWindow &window) {
+        if(game_started && gameStartedClock.getElapsedTime().asSeconds() < 2) {
+            sf::Text gameStarted =  createText(font, "Game Started! Good luck!", 
+                18, sf::Vector2f(215, 115), sf::Color(100, 200, 100));
+
+            window.draw(gameStarted);
+        };
+    }
+
+
+    // Info about who is owner
+    void owner_info_text(sf::RenderWindow &window) {
+        sf::Text ownerMsg;
+        if(curr_lobby.owner_name == username) {
+            ownerMsg = createText(font, ONWER_YOU, 
+                12, sf::Vector2f(330, 348), sf::Color(169, 169, 169));
+        } else {
+            std::string info_msg = ONWER_ELSE + curr_lobby.owner_name;
+                        ownerMsg = createText(font, info_msg, 
+                12, sf::Vector2f(330, 348), sf::Color(169, 169, 169));
+        }
+        window.draw(ownerMsg);
+    }
+
+    void cards_counters_text(sf::RenderWindow &window) {
+        sf::Text upCount;
+        sf::Text downCount;
+        sf::Text middleCount;
+        std::string s;
+        int x_pos = 220;
+
+        // To jakos idzie zrefactorowac
+        s = "Cards up: " + std::to_string(curr_lobby.up_amount);
+        cards_counters_text_creator(window, upCount, s, x_pos);
+        x_pos = x_pos + s.size()*8 + 10;
+
+        s = "Card down: " +  std::to_string(curr_lobby.down_amount);
+        cards_counters_text_creator(window, downCount, s, x_pos);
+        x_pos = x_pos + s.size()*8 + 10;
+
+        s = "Card middle: " +  std::to_string(curr_lobby.middle_amount);
+        cards_counters_text_creator(window, middleCount, s, x_pos);
+    }
+
+    // stowrzenie tektos
+    void cards_counters_text_creator(sf::RenderWindow &window, sf::Text &text, std::string &s, int &x_pos) {
+        text.setFont(font);
+        text.setCharacterSize(8);
+        text.setFillColor(sf::Color(sf::Color::White)); // Grey color
+        text.setPosition(x_pos, 355);
+        text.setString(s);
+        window.draw(text);
+    }
+
+
     void chose_screen(sf::RenderWindow &window) {
         sf::Event event;
 
@@ -1334,55 +1318,75 @@ private:
 
         //std::cout << "i: " << i << std::endl;
         if(i== 7) {
-            x_pos = 730;
-            y_pos = 550;
-    
-
-
-// To change
-
-            hidden_card_y = 70;
-            hidden_card_x = 210;
-            shown_card_y = hidden_card_y + 63;
-            shown_card_x = hidden_card_x - 63;
-
+            x_pos = 700;
+            y_pos = 540;
             rotation = -45;
+
+            shown_card_y = 530;
+            shown_card_x = 590;
+
+
+            hidden_card_y = shown_card_y - 63;
+            hidden_card_x = shown_card_x + 63;
+
         } else if(i==6) {
             x_pos = 750;
             y_pos = 350;
             rotation = -90;
 
 
-// To change
+            hidden_card_y = 295;
+            hidden_card_x = 670;
+            shown_card_y = 380;
+            shown_card_x = 670;
 
+
+        /*
+
+            hidden_card_y = 205;
+            hidden_card_x = 130;
+            shown_card_y = 295;
+            shown_card_x = 130;
             hidden_card_y = 70;
             hidden_card_x = 210;
             shown_card_y = hidden_card_y + 63;
             shown_card_x = hidden_card_x - 63;
+            */
         } else if(i==5) {
             x_pos = 750;
             y_pos = 100;
             rotation = -135;
 
 
-// To change
-
-            hidden_card_y = 70;
-            hidden_card_x = 210;
+            hidden_card_y = 137;
+            hidden_card_x = 647;
             shown_card_y = hidden_card_y + 63;
-            shown_card_x = hidden_card_x - 63;
+            shown_card_x = hidden_card_x + 63;
+
+
+/*
+            shown_card_y = 137;
+            shown_card_x = 647;
+            hidden_card_y = shown_card_y + 63;
+            hidden_card_x = shown_card_x - 63;
+
+            */
         } else if (i==4){
             x_pos = 400;
             y_pos = 50;
             rotation = -180;
-
-
 // To change
 
             hidden_card_y = 70;
             hidden_card_x = 210;
             shown_card_y = hidden_card_y + 63;
             shown_card_x = hidden_card_x - 63;
+
+            hidden_card_y = 150;
+            hidden_card_x = 390;
+            shown_card_y = 150;
+            shown_card_x = 475;
+
         } else if (i==3){
             x_pos = 100;
             y_pos = 60;
@@ -1446,3 +1450,4 @@ int main(int argc, char *argv[])
     client.run();
     return 0;
 }
+

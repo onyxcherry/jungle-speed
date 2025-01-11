@@ -455,7 +455,18 @@ private:
             "circle_whole_x_blue", 
             "circle_whole_x_red", 
             "circle_whole_x_yellow", 
-            "circle_whole_x_green"
+            "circle_whole_x_green",
+            "circle_inside_x_blue", 
+            "circle_inside_x_red", 
+            "circle_inside_x_yellow", 
+            "circle_inside_x_green", 
+            "circle_whole_x_blue", 
+            "circle_whole_x_red", 
+            "circle_whole_x_yellow", 
+            "circle_whole_x_green",
+            "circle_whole_x_red", 
+            "circle_whole_x_red", 
+            "circle_whole_x_red"
         };
     }
 
@@ -1025,18 +1036,29 @@ private:
             {
                 std::cout << "Wygarno!" << std::endl;
                 int winner_id = game.get_player_holder_id();
+                std::cout << "winner_id: " << winner_id << std::endl;
                 if (has_inwards_arrows(current_card))
                 {
+                    std::cout << "Poza outwards " << std::endl;
                     game.transfer_winner_cards_facing_up_to_middle(winner_id);
                 }
                 else
                 {
+                    std::cout << "Transfer przed " << std::endl;
                     game.transfer_cards_to_losers(current_card, winner_id);
+                    std::cout << "Transfer przesezdl " << std::endl;
                     std::vector<std::shared_ptr<Player>> losers = game.get_losers(current_card, winner_id);
+                    std::cout << "Loser znaleziony" << std::endl;
+
                     send_duel_result(game.get_players(), winner_id, losers);
+                    std::cout << "Duel wyslany" << std::endl;
 
                     game.set_turn_of(losers.back()->fd);
+                    std::cout << "Set turn of zrobiony" << std::endl;
+
                 }
+                std::cout << "Poza outwards " << std::endl;
+
             }
             else if (game.totem_cv->wait_for(totem_lock, max_waiting_ms_mistakenly_hold_totem, [&game]()
                                              { return game.is_totem_held(); }))
