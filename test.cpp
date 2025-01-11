@@ -42,7 +42,7 @@ struct Player {
 
 };
 
-    sf::Text createText(const sf::Font& font, const std::string& str, int size, sf::Vector2f pos, sf::Color color = sf::Color::White) {
+    sf::Text createText(const sf::Font& font, const std::string& str, int size, sf::Vector2f pos = sf::Vector2f(0,0), sf::Color color = sf::Color::White) {
         sf::Text text;
         text.setFont(font);
         text.setString(str);
@@ -67,18 +67,21 @@ struct InLobby {
 
     std::string current_player_turn_name;
 
-    bool totem_held_by_else;
-    bool totem_held_by_me;
+    bool totem_held_by_else = false;
+    bool totem_held_by_me = false;
 
     bool totem_held;
 
     int totem_holder;
     int totem_holder_pos = -1;
+    std::string totem_holder_name = "";
+
 
     bool cards_in_the_middle = false;
     int middle_amount = 0;
     int up_amount = 0;
     int down_amount = 0;
+    bool tried_to_catch_totem = false;
 
 
     int position_in_game;
@@ -141,7 +144,6 @@ class JungleSpeedClient
     sf::Clock totemClock;
 
     bool show_warrning = false;
-    bool tried_to_catch_totem = false;
     sf::Clock outwardClock;
     bool is_outward_card = false;
  
@@ -198,6 +200,15 @@ public:
 
     }
 
+    sf::Vector2f offset_from_middle(int x_offset = 0, int y_offset = 0) {
+        int y_pos = 300 + y_offset;
+        int x_pos = 400 + x_offset;
+
+        return sf::Vector2f(x_pos,y_pos);
+
+    }
+
+        
 
     sf::Vector2f get_center(const sf::Drawable &drawable) {
         if (const sf::RectangleShape* shape = dynamic_cast<const sf::RectangleShape*>(&drawable))
@@ -378,8 +389,10 @@ public:
                 } if ((event.type == sf::Event::KeyPressed) && game_started) {
                     if (event.key.code == sf::Keyboard::Space) {
                         std::cout << "wcisnieto spacje" << std::endl;
-                        tried_to_catch_totem = true;
-                        catch_totem_window();
+                        curr_lobby.tried_to_catch_totem = true;
+                        if(!curr_lobby.totem_held_by_else && !curr_lobby.totem_held_by_me) {
+                            catch_totem_window();
+                        }
                     }
 
                 }
@@ -491,7 +504,7 @@ public:
 
     //Ustawinia texotw
 
-    sf::Text createText(const sf::Font& font, const std::string &str, int size, sf::Vector2f pos, sf::Color color = sf::Color::White) {
+    sf::Text createText(const sf::Font& font, const std::string &str, int size, sf::Vector2f pos = sf::Vector2f(0,0), sf::Color color = sf::Color::White) {
         sf::Text text;
         text.setFont(font);
         text.setString(str);
@@ -547,46 +560,67 @@ public:
     }
 
 
-    void set_holder_pos(int &fd) {
+    void set_holder_pos_and_name(int &fd) {
         int from_last = 0;
        // int form_first = 0;
         for(int i = 0; i < curr_lobby.players.size(); i++) {
-            if(curr_lobby.players[i].fd == fd) {
+             if(curr_lobby.players[i].fd == fd) {
                 curr_lobby.totem_holder_pos = curr_lobby.position_in_game >= i ? 
                     curr_lobby.position_in_game - i : 7 - from_last;
-                    std::cout << "Pozycja holdera: " << curr_lobby.totem_holder_pos << std::endl;
-                    return;
+               
+                std::cout << "Pozycja holdera: " << curr_lobby.totem_holder_pos << std::endl;
+                std::cout << "Potencjalne wywalanie przed curr" << curr_lobby.players[i].username << std::endl;
+                curr_lobby.totem_holder_name = curr_lobby.players[i].username;
+                std::cout << "Potencjalne wywalanie po curr" << std::endl;
+                std::cout << "Imie holdera: " << curr_lobby.totem_holder_name << std::endl;
+
+                return;
             }
             if(curr_lobby.position_in_game < i) from_last++;
             //if(curr_lobby.position_in_game < i) form_first++;
             std::cout << "i: " << i << std::endl;
         }
-        std::cout << "Przeszlo " << curr_lobby.totem_holder_pos << std::endl;
+        //std::cout << "Przeszlo " << curr_lobby.totem_holder_pos << std::endl;
 
     }
 
     // drawing totem
     void draw_totem(sf::RenderWindow &window) {
         sf::Sprite totem;
+        sf::Text totem_text;
         totem.setTexture(textures[10]);
 
 
-        if(curr_lobby.totem_held_by_me && totemClock.getElapsedTime().asSeconds() < 3) {
+        if(curr_lobby.totem_held_by_me && curr_lobby.tried_to_catch_totem && !totemClock.getElapsedTime().asSeconds() < 0.4) {
             //std::cout << "tu weszlo" << std::endl;
            // totem.setPosition(set_in_the_middle(totem.getGlobalBounds(),0,150));
-            sf::Text totem_text = createText(font, "You have caught totem!",12,sf::Vector2f(300, 330), sf::Color(100, 200, 100));
-            totem_text.setPosition(set_in_the_middle(totem.getGlobalBounds(), 100, 0));
-            window.draw(totem_text);
-        } else if (!curr_lobby.totem_held_by_me && totemClock.getElapsedTime().asSeconds() < 3) {
+            totem_text = createText(font, "You have caught totem!",12,sf::Vector2f(300, 330), sf::Color(100, 200, 100));
+            //totem_text.setPosition(set_in_the_middle(totem.getGlobalBounds(), 100, 0));
+        } else if (!curr_lobby.totem_held_by_me && curr_lobby.tried_to_catch_totem && !totemClock.getElapsedTime().asSeconds() < 0.4) {
             //std::cout << "Nie zlapano" << std::endl;
 
-            sf::Text totem_text = createText(font, "Failed to catch totem!",12,sf::Vector2f(300, 330), sf::Color::Red);
-            totem_text.setPosition(set_in_the_middle(totem.getGlobalBounds(), 100, 0));
+            totem_text = createText(font, "Failed to catch totem!",12,sf::Vector2f(300, 330), sf::Color::Red);
             //totem.setPosition(set_in_the_middle(totem.getGlobalBounds()));
-            window.draw(totem_text);
         }
+        totem_text.setPosition(offset_from_middle(100,6));
+        window.draw(totem_text);
+        totem_hloder_text(window);
         set_totem_position(totem);
         window.draw(totem);
+    }
+
+
+    void totem_hloder_text(sf::RenderWindow &window) {
+        sf::Text totem_holder_text;
+        if(curr_lobby.totem_held_by_me) {
+            totem_holder_text = createText(font, "You are totem holder!", 12);
+        } else if (curr_lobby.totem_held_by_else) {
+
+            std::string totem_holder_stirng = "Totem holder: " + curr_lobby.totem_holder_name;
+            totem_holder_text = createText(font, totem_holder_stirng, 12);
+        }
+        totem_holder_text.setPosition(offset_from_middle(100,-6));
+        window.draw(totem_holder_text);
     }
 
     // Setting up trun card btn and text
@@ -975,18 +1009,18 @@ private:
 
     void catch_totem_response(json &root) {
         std::cout<<"totem: " << root["success"].get<bool>()  << std::endl;
-        std::cout<< "treid: " << tried_to_catch_totem << std::endl;
+        std::cout<< "treid: " << curr_lobby.tried_to_catch_totem << std::endl;
 
         if(root["success"].get<bool>() == true) {
             std::cout<< "Zlapano" << std::endl;
             curr_lobby.totem_held_by_me = true;
             curr_lobby.totem_holder_pos = 0;
             totemClock.restart();
-        } else if(tried_to_catch_totem == true && root["success"].get<bool>() == false) {
+        } else if(curr_lobby.tried_to_catch_totem == true && root["success"].get<bool>() == false) {
             std::cout << "Tu jestem" << std::endl;
             curr_lobby.totem_held_by_me = false;
             totemClock.restart();
-            tried_to_catch_totem = false;
+            //curr_lobby.tried_to_catch_totem = false;
         } else if(root["success"].get<bool>() == false) {
             std::cout << "Jest jakis case" << std::endl;
         }
@@ -1053,10 +1087,12 @@ private:
     void totem_response(json &root) {
         curr_lobby.totem_held_by_else = root["held"].get<bool>();
         if(curr_lobby.totem_held_by_else) {
+            curr_lobby.totem_held_by_me = false;
+            curr_lobby.totem_held_by_else = true;
             std::cout << "Trzymacz zostal zmieniony" << std::endl;
             curr_lobby.totem_holder = root["by"].get<int>();
             std::cout << "Trzymacz zostal zmieniony: " << curr_lobby.totem_holder << std::endl;
-            set_holder_pos(curr_lobby.totem_holder);
+            set_holder_pos_and_name(curr_lobby.totem_holder);
             std::cout << "Trzymacz zprzeszedl" << std::endl;
         } else {
             // Odlozono totem
@@ -1068,6 +1104,8 @@ private:
     void clear_totem_holder() {
         curr_lobby.totem_held_by_me = false;
         curr_lobby.totem_held_by_else = false;
+        curr_lobby.tried_to_catch_totem = false;
+        curr_lobby.totem_holder_name = "";
         curr_lobby.totem_holder_pos = -1;
     }
 
