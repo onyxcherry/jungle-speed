@@ -604,6 +604,8 @@ public:
     void draw_totem(sf::RenderWindow &window) {
         sf::Sprite totem;
         sf::Text totem_text;
+        sf::Text how_to_catch_text = createText(font, "To catch totem press spacebar", 10, sf::Vector2f(0,0), sf::Color(169,169,169));
+        how_to_catch_text.setPosition(set_in_the_middle(how_to_catch_text.getGlobalBounds(),0,40));
         totem.setTexture(textures[10]);
 
 
@@ -620,6 +622,7 @@ public:
         }
         totem_text.setPosition(offset_from_middle(100,6));
         window.draw(totem_text);
+        window.draw(how_to_catch_text);
         totem_hloder_text(window);
         set_totem_position(totem);
         window.draw(totem);
@@ -1561,9 +1564,9 @@ private:
             shown_card_y = hidden_card_y + 63;
             shown_card_x = hidden_card_x - 63;
 
-            hidden_card_y = 150;
+            hidden_card_y = 140;
             hidden_card_x = 390;
-            shown_card_y = 150;
+            shown_card_y = 140;
             shown_card_x = 475;
 
         } else if (i==3){
@@ -1600,9 +1603,9 @@ private:
             x_pos = 350;
             y_pos = 550;
 
-            hidden_card_y = 450;
+            hidden_card_y = 460;
             hidden_card_x = 300;
-            shown_card_y = 450;
+            shown_card_y = 460;
             shown_card_x = 390;
 
             rotation = 0;
