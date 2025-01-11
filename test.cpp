@@ -8,7 +8,7 @@
 #include <sstream>
 #include <SFML/Graphics.hpp>
 #include <thread>
-#include <nlohmann/json.hpp>
+#include "json.hpp"
 
 #define BUFFER_SIZE 1024
 #define WINDOW_WIDTH 800
@@ -60,19 +60,24 @@ struct InLobby {
     std::vector<std::string> usernames;
     
     int my_position;
-    int my_fd;
+    
+    std::string my_name;
 
     std::vector<Player> players;
 
-    int current_player_turn_fd;
+    std::string current_player_turn_name;
 
-    bool totem_held;
+    bool totem_held_by_else;
+    bool totem_held_by_me;
+
     int totem_holder;
 
     bool cards_in_the_middle = false;
     int middle_amount = 0;
     int up_amount = 0;
     int down_amount = 0;
+
+
 
     //TODO make it a mp so when you hive an fd you get plaer/
 
@@ -130,10 +135,10 @@ class JungleSpeedClient
     int position_in_game;
     std::vector<sf::Texture> textures;
     sf::Clock clock;
-
+    sf::Clock totemClock;
 
     bool show_warrning = false;
-
+    bool tried_to_catch_totem = false;
     sf::Clock outwardClock;
     bool is_outward_card = false;
  
@@ -182,13 +187,47 @@ public:
     }
 
 
-    sf::Vector2f set_in_the_middle(sf::FloatRect bounds) {
-        int y_pos = 300 - (bounds.height/2);
-        int x_pos = 400 - (bounds.width/2);
+    sf::Vector2f set_in_the_middle(sf::FloatRect bounds, int x_offset = 0, int y_offset = 0) {
+        int y_pos = 300 - (bounds.height/2) + y_offset;
+        int x_pos = 400 - (bounds.width/2) + x_offset;
 
         return sf::Vector2f(x_pos,y_pos);
 
     }
+
+
+    sf::Vector2f get_center(const sf::Drawable &drawable) {
+        if (const sf::RectangleShape* shape = dynamic_cast<const sf::RectangleShape*>(&drawable))
+        {
+            sf::FloatRect globalBounds = shape->getGlobalBounds();
+            return sf::Vector2f(globalBounds.left + globalBounds.width / 2, globalBounds.top + globalBounds.height / 2);
+        }
+        else if (const sf::Sprite* sprite = dynamic_cast<const sf::Sprite*>(&drawable))
+        {
+            sf::FloatRect globalBounds = sprite->getGlobalBounds();
+            return sf::Vector2f(globalBounds.left + globalBounds.width / 2, globalBounds.top + globalBounds.height / 2);
+        }
+        else if (const sf::Text* text = dynamic_cast<const sf::Text*>(&drawable))
+        {
+            sf::FloatRect globalBounds = text->getGlobalBounds();
+            return sf::Vector2f(globalBounds.left + globalBounds.width / 2, globalBounds.top + globalBounds.height / 2);
+        }
+        else
+        {
+            return sf::Vector2f(0, 0);  
+        }
+    }
+
+    sf::Vector2f center_in_button(const sf::Drawable &drawable, sf::FloatRect bounds) {
+        sf::Vector2f v = get_center(drawable);
+        ////std::cout << v.x << " center_in_button " << v.y << std::endl;
+        //std::cout << bounds.height << " center_in_button " << bounds.width << std::endl;
+        int y_pos = v.y - (bounds.height/2);
+        //std::cout << "Bounds height" << bounds.height << std::endl;
+               // std::cout << "y" << y_pos << std::endl;
+        int x_pos = v.x - (bounds.width/2);
+        return sf::Vector2f(x_pos,y_pos);
+    };
 
     // TODO: Make it so flase stops program
     bool load_textures(std:: string name) {
@@ -253,37 +292,11 @@ public:
     {
         char buffer[BUFFER_SIZE] = {};
         ssize_t bytes_received = recv(client_fd, buffer, BUFFER_SIZE, 0);
-
         if (bytes_received <= 0)
         {
             return "";
-        }
-        //msg_in.insert(msg_in.end(), buffer, buffer + bytes_received);
-        
+        }        
         std::string s(buffer);
-        //std::string message = extract_message(msg_in);
-
-        /*
-        char buffer[BUFFER_SIZE] = {0};
-        ssize_t bytes_received = recv(client_fd, buffer, BUFFER_SIZE - 1, 0);
-        std::string recived_data;
-        std::string complete; 
-        if (bytes_received <= 0)
-        {
-            return "";
-        } else {
-            recived_data.append(buffer, bytes_received);
-            std::cout << "recived_data: " << recived_data << std::endl;
-            size_t pos;
-            while((pos==recived_data.find("\t\t")) != std::string::npos) {
-                complete = recived_data.substr(0,pos);
-                recived_data.erase(0, pos + 1);
-            }
-            std::cout << "Po recived_data: " << complete << std::endl;
-
-        }
-        //buffer[bytes_received] = '\0';
-        */
         return s;
     }
 
@@ -304,16 +317,8 @@ public:
         sf::Sprite spriteShown;
         
 
-           // Start Game button
+        // Start Game button
         sf::RectangleShape start_btn;
-
-        start_btn.setSize(sf::Vector2f(150, 60));
-        start_btn.setFillColor(sf::Color(169, 169, 169));
-        start_btn.setPosition(307, 265);
-
-        sf::Text startText = createText(font, "Start", 18,
-                                    sf::Vector2f(355,
-                                                285));
 
         //Showing a flashing message 
         start_warning_text(window);
@@ -324,11 +329,15 @@ public:
         //Infor players that game has started
         game_started_info_text(window);
 
-
-
         // Turn card button
         sf::RectangleShape turnCardBtn = turn_card_btn_and_text(window);
 
+        // Start button
+        start_btn = createBtn(sf::Vector2f(150, 60), sf::Color(169, 169, 169));
+        start_btn.setPosition(set_in_the_middle(start_btn.getGlobalBounds()));
+        if(curr_lobby.players.size() >1) {
+            start_btn.setFillColor(sf::Color(100,200,100));
+        }
 
         spriteHidden.setTexture(textures[0]);
         //spriteShown.setTexture(textures[0]);
@@ -352,8 +361,8 @@ public:
                                 }
                                 if (isClicked(turnCardBtn, sf::Mouse::getPosition(window))) {
                                     std::cout << "Klikinieto obrco karte" << std::endl;
-                                    std::cout << curr_lobby.current_player_turn_fd  << std::endl;
-                                    std::cout << curr_lobby.my_fd << std::endl;
+                                    std::cout << curr_lobby.current_player_turn_name  << std::endl;
+                                    std::cout << curr_lobby.my_name << std::endl;
                                     send_turn_card();      
                                 }
 
@@ -366,6 +375,7 @@ public:
                 } if ((event.type == sf::Event::KeyPressed) && game_started) {
                     if (event.key.code == sf::Keyboard::Space) {
                         std::cout << "wcisnieto spacje" << std::endl;
+                        tried_to_catch_totem = true;
                         catch_totem_window();
                     }
 
@@ -453,14 +463,15 @@ public:
 
             if(!game_started) {
                 window.draw(start_btn);
-                window.draw(startText);
+                start_btn_text(window, start_btn);
+                //window.draw(startText);
                 //window.draw(playerNuminfo);
                 //window.draw(ownerMsg);
                 info_about_players_text(window);
                 owner_info_text(window);
 
             } else {
-                std::string s = "Player's trun: " +  std::to_string(curr_lobby.current_player_turn_fd);
+                std::string s = "Player's trun: " +  curr_lobby.current_player_turn_name;
                 cards_counters_text(window);
                 sf::Text currTurnPlayer = createText(font, s, 10, sf::Vector2f(165, 290), sf::Color::White);
                 
@@ -510,11 +521,31 @@ public:
     }
 
 
-    //
+    // drawing totem
     void draw_totem(sf::RenderWindow &window) {
         sf::Sprite totem;
         totem.setTexture(textures[10]);
-        totem.setPosition(set_in_the_middle(totem.getGlobalBounds()));
+        if(curr_lobby.totem_held_by_me && totemClock.getElapsedTime().asSeconds() < 3) {
+            //std::cout << "tu weszlo" << std::endl;
+            totem.setPosition(set_in_the_middle(totem.getGlobalBounds(),0,150));
+            sf::Text totem_text = createText(font, "You have caught totem!",12,sf::Vector2f(300, 330), sf::Color(100, 200, 100));
+            totem_text.setPosition(set_in_the_middle(totem.getGlobalBounds(), 100, 0));
+            window.draw(totem_text);
+        } else if (!curr_lobby.totem_held_by_me && totemClock.getElapsedTime().asSeconds() < 3) {
+            //std::cout << "Nie zlapano" << std::endl;
+
+            sf::Text totem_text = createText(font, "Failed to catch totem!",12,sf::Vector2f(300, 330), sf::Color::Red);
+            totem_text.setPosition(set_in_the_middle(totem.getGlobalBounds(), 100, 0));
+            totem.setPosition(set_in_the_middle(totem.getGlobalBounds()));
+            window.draw(totem_text);
+        } else if(curr_lobby.totem_held_by_me && totemClock.getElapsedTime().asSeconds() >= 3)  {
+            curr_lobby.totem_held_by_me = false;
+        }
+        else {
+            totem.setPosition(set_in_the_middle(totem.getGlobalBounds()));
+            
+            //curr_lobby.totem_held_by_me = false;
+        }
         window.draw(totem);
     }
 
@@ -532,10 +563,26 @@ public:
             text = createText(font, "Wait for your turn", 
                 12, sf::Vector2f(335, 405), sf::Color::White);
         } 
+
+        text.setPosition(center_in_button(btn, text.getGlobalBounds()));
         window.draw(btn);
         window.draw(text);
         return btn;
     }
+
+
+        void start_btn_text(sf::RenderWindow &window,sf::RectangleShape &btn ){
+
+            sf::Text text = createText(font, "Start", 18,
+                                        sf::Vector2f(100,
+                                                    100), sf::Color::White);
+            auto [x,y] = center_in_button(btn, text.getGlobalBounds());  
+            //std::cout << x << "x i y " << y << std::endl; 
+            text.setPosition(x,y);
+            window.draw(text);
+        }
+        
+
     // Funtcions using clock
     //Flashin warning after start game is clicked 
     void start_warning_text(sf::RenderWindow &window) {
@@ -878,11 +925,30 @@ public:
                 outwardClock.restart();
             } else if(action == "DUEL") {
                 duel_respones(root);
+            } else if(action == "CATCH_TOTEM") {
+                catch_totem_response(root);
             }
         }
         }
     }
 private:
+
+    void catch_totem_response(json &root) {
+        std::cout<<"totem: " << root["success"].get<bool>()  << std::endl;
+        std::cout<< "treid: " << tried_to_catch_totem << std::endl;
+
+        if(root["success"].get<bool>() == true) {
+            std::cout<< "Zlapano" << std::endl;
+            curr_lobby.totem_held_by_me = true;
+            totemClock.restart();
+        } else if(tried_to_catch_totem == true && root["success"].get<bool>() == false) {
+            std::cout << "Tu jestem" << std::endl;
+            curr_lobby.totem_held_by_me = false;
+            totemClock.restart();
+            tried_to_catch_totem = false;
+
+        }
+    }
 
     void duel_respones(json &root) {
         std::cout << "DUEEEEEEEEEEEEEEEEEEEEEEEEL!!!!!!!!!!!!!!!!!" << std::endl;
@@ -942,16 +1008,16 @@ private:
     }
 
     void totem_response(json &root) {
-        curr_lobby.totem_held = root["held"].get<bool>();
-        if(curr_lobby.totem_held) {
-            root["by"].get<int>();
+        curr_lobby.totem_held_by_else = root["held"].get<bool>();
+        if(curr_lobby.totem_held_by_else) {
+            curr_lobby.totem_holder = root["by"].get<int>();
         };
     }
 
     void next_turn_response(json &root) {
-        curr_lobby.current_player_turn_fd = root["next_player"].get<int>();
-        std::cout << "Curr turn: " << curr_lobby.current_player_turn_fd  << std::endl;
-        if(curr_lobby.current_player_turn_fd == curr_lobby.my_fd) {
+        curr_lobby.current_player_turn_name = root["next_player"].get<std::string>();
+        std::cout << "Curr turn: " << curr_lobby.current_player_turn_name  << std::endl;
+        if(curr_lobby.current_player_turn_name == curr_lobby.my_name) {
             can_trun_card = true;
         } else {
             can_trun_card = false;
@@ -1301,7 +1367,7 @@ private:
             {
                 std::cout << "Nick: " << root["username"].get<std::string>() << "\n";
                 username = root["username"].get<std::string>();
-                curr_lobby.my_fd = root["id"].get<int>();
+                curr_lobby.my_name = username;
             }
         }
         else

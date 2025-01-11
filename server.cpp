@@ -382,17 +382,15 @@ public:
         auto rng = std::default_random_engine{};
         std::shuffle(cards_to_be_distributed.begin(), cards_to_be_distributed.end(), rng);
 
-        for (const auto &player : get_players())
-        {
-            std::move(player->cards_facing_up.begin(), player->cards_facing_up.end(), std::back_inserter(player->cards_facing_down));
-            player->cards_facing_up.erase(player->cards_facing_up.begin(), player->cards_facing_up.end());
-        }
-
-        int i = 0;
+        auto losers_it = losers.begin();
         for (const std::string &card : cards_to_be_distributed)
         {
-            players[i]->cards_facing_down.push_back(card);
-            i = ++i % players.size();
+            (*losers_it)->cards_facing_down.push_back(card);
+            ++losers_it;
+            if (losers_it == losers.end())
+            {
+                losers_it = losers.begin();
+            }
         }
     }
 
@@ -810,9 +808,9 @@ private:
         send_to_all(players, "TOTEM", totem_down_msg);
     }
 
-    static void send_next_turn(std::vector<std::shared_ptr<Player>> players, int player_id)
+    static void send_next_turn(std::vector<std::shared_ptr<Player>> players, std::string player_name)
     {
-        json message = {{"next_player", player_id}};
+        json message = {{"next_player", player_name}};
         send_to_all(players, "NEXT_TURN", message);
     }
 
@@ -950,7 +948,7 @@ private:
                 send_cards_count(player, game.get_middle_cards_count(), game);
             }
         // Code to show player whose turn is it in begining
-        send_next_turn(game.get_players(), game.get_current_turn_player().fd);
+        send_next_turn(game.get_players(), game.get_current_turn_player().username);
 
         while (true)
         {
@@ -1010,19 +1008,18 @@ private:
                     std::cout << "Wyslano outwards info" << std::endl;
 
 
-                    // I think this slips playr turn
-                    /*
+                    
                     if (!duel)
                     {
                         std::cout << "Nie ma  duel" << std::endl;
 
                         game.next_turn();
                         game.set_turn_of(player_id);
-                        send_next_turn(game.get_players(), game.get_current_turn_player().fd);
+                        send_next_turn(game.get_players(), game.get_current_turn_player().username);
                         continue;
                     }
                     std::cout << "Po duela" << std::endl;
-*/
+
                     // TODO: if same symbols, continue executing code below (wait for totem, all other players will be losers!)
                     // TODO: if not same symbols, continue the loop from the same player
                 }
@@ -1086,7 +1083,7 @@ private:
 
             game.next_turn();
             Player &next_turn_player = game.get_current_turn_player();
-            send_next_turn(game.get_players(), next_turn_player.fd);
+            send_next_turn(game.get_players(), next_turn_player.username);
         }
         std::cout << "Game " << game.get_identifier() << " has ended" << std::endl;
     }
@@ -1330,6 +1327,7 @@ private:
         // ? despite the player's obvious loss
 
         bool caught = game.catch_totem(player.fd);
+        std::cout << "Totem: " << caught << std::endl;
         if (caught)
         {
             send_totem_held(game.get_players(), player.fd);

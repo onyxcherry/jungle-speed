@@ -1,6 +1,5 @@
 {
   "dependencies": [
-    "nlohmann-json",
-    "sfml"
+    "nlohmann-json"
    ]
 }
