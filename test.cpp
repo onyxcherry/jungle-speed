@@ -70,7 +70,10 @@ struct InLobby {
     bool totem_held_by_else;
     bool totem_held_by_me;
 
+    bool totem_held;
+
     int totem_holder;
+    int totem_holder_pos = -1;
 
     bool cards_in_the_middle = false;
     int middle_amount = 0;
@@ -78,7 +81,7 @@ struct InLobby {
     int down_amount = 0;
 
 
-
+    int position_in_game;
     //TODO make it a mp so when you hive an fd you get plaer/
 
     // Can be done by posiotion
@@ -132,7 +135,7 @@ class JungleSpeedClient
     std::vector<Lobby> lobbyList;
     InLobby curr_lobby;
     sf::Font font;
-    int position_in_game;
+  //  int position_in_game;
     std::vector<sf::Texture> textures;
     sf::Clock clock;
     sf::Clock totemClock;
@@ -397,7 +400,7 @@ public:
         int not_digonal_offset = 90;
         int digonal_offset = 90/1.41;
 
-        for(int i=position_in_game; i>=0;i--) {
+        for(int i=curr_lobby.position_in_game; i>=0;i--) {
 
 
 
@@ -430,7 +433,7 @@ public:
         }
         //int curr_num = curr_lobby.players.size();
         int from_last = 0;
-        for(int i=position_in_game + 1;i<curr_lobby.players.size();i++) {
+        for(int i=curr_lobby.position_in_game + 1;i<curr_lobby.players.size();i++) {
             //std::cout << "WSZEDLEM: " << curr_lobby.usernames.size() - position_in_game << std::endl;
 
             get_card_position(7-from_last, x_pos, y_pos, rotation,
@@ -521,13 +524,56 @@ public:
     }
 
 
+    void set_totem_position(sf::Sprite &totem) {
+        if(curr_lobby.totem_holder_pos == -1) {
+            totem.setPosition(set_in_the_middle(totem.getGlobalBounds()));
+        } else if (curr_lobby.totem_holder_pos == 1) {
+             totem.setPosition(set_in_the_middle(totem.getGlobalBounds(), -300, 200));
+        }else if (curr_lobby.totem_holder_pos == 2) {
+             totem.setPosition(set_in_the_middle(totem.getGlobalBounds(), -300, 0));
+        }else if (curr_lobby.totem_holder_pos == 3) {
+             totem.setPosition(set_in_the_middle(totem.getGlobalBounds(), -300, -200));
+        }else if (curr_lobby.totem_holder_pos == 4) {
+             totem.setPosition(set_in_the_middle(totem.getGlobalBounds(), 0, -200));
+        }else if (curr_lobby.totem_holder_pos == 5) {
+             totem.setPosition(set_in_the_middle(totem.getGlobalBounds(), 300, -200));
+        }else if (curr_lobby.totem_holder_pos == 6) {
+             totem.setPosition(set_in_the_middle(totem.getGlobalBounds(), 300, 0));
+        }else if (curr_lobby.totem_holder_pos == 7) {
+             totem.setPosition(set_in_the_middle(totem.getGlobalBounds(), 300, 200));
+        }else if (curr_lobby.totem_holder_pos == 0) {
+             totem.setPosition(set_in_the_middle(totem.getGlobalBounds(), 0, 200));
+        }
+    }
+
+
+    void set_holder_pos(int &fd) {
+        int from_last = 0;
+       // int form_first = 0;
+        for(int i = 0; i < curr_lobby.players.size(); i++) {
+            if(curr_lobby.players[i].fd == fd) {
+                curr_lobby.totem_holder_pos = curr_lobby.position_in_game >= i ? 
+                    curr_lobby.position_in_game - i : 7 - from_last;
+                    std::cout << "Pozycja holdera: " << curr_lobby.totem_holder_pos << std::endl;
+                    return;
+            }
+            if(curr_lobby.position_in_game < i) from_last++;
+            //if(curr_lobby.position_in_game < i) form_first++;
+            std::cout << "i: " << i << std::endl;
+        }
+        std::cout << "Przeszlo " << curr_lobby.totem_holder_pos << std::endl;
+
+    }
+
     // drawing totem
     void draw_totem(sf::RenderWindow &window) {
         sf::Sprite totem;
         totem.setTexture(textures[10]);
+
+
         if(curr_lobby.totem_held_by_me && totemClock.getElapsedTime().asSeconds() < 3) {
             //std::cout << "tu weszlo" << std::endl;
-            totem.setPosition(set_in_the_middle(totem.getGlobalBounds(),0,150));
+           // totem.setPosition(set_in_the_middle(totem.getGlobalBounds(),0,150));
             sf::Text totem_text = createText(font, "You have caught totem!",12,sf::Vector2f(300, 330), sf::Color(100, 200, 100));
             totem_text.setPosition(set_in_the_middle(totem.getGlobalBounds(), 100, 0));
             window.draw(totem_text);
@@ -536,16 +582,10 @@ public:
 
             sf::Text totem_text = createText(font, "Failed to catch totem!",12,sf::Vector2f(300, 330), sf::Color::Red);
             totem_text.setPosition(set_in_the_middle(totem.getGlobalBounds(), 100, 0));
-            totem.setPosition(set_in_the_middle(totem.getGlobalBounds()));
+            //totem.setPosition(set_in_the_middle(totem.getGlobalBounds()));
             window.draw(totem_text);
-        } else if(curr_lobby.totem_held_by_me && totemClock.getElapsedTime().asSeconds() >= 3)  {
-            curr_lobby.totem_held_by_me = false;
         }
-        else {
-            totem.setPosition(set_in_the_middle(totem.getGlobalBounds()));
-            
-            //curr_lobby.totem_held_by_me = false;
-        }
+        set_totem_position(totem);
         window.draw(totem);
     }
 
@@ -940,14 +980,17 @@ private:
         if(root["success"].get<bool>() == true) {
             std::cout<< "Zlapano" << std::endl;
             curr_lobby.totem_held_by_me = true;
+            curr_lobby.totem_holder_pos = 0;
             totemClock.restart();
         } else if(tried_to_catch_totem == true && root["success"].get<bool>() == false) {
             std::cout << "Tu jestem" << std::endl;
             curr_lobby.totem_held_by_me = false;
             totemClock.restart();
             tried_to_catch_totem = false;
-
+        } else if(root["success"].get<bool>() == false) {
+            std::cout << "Jest jakis case" << std::endl;
         }
+        
     }
 
     void duel_respones(json &root) {
@@ -1010,8 +1053,22 @@ private:
     void totem_response(json &root) {
         curr_lobby.totem_held_by_else = root["held"].get<bool>();
         if(curr_lobby.totem_held_by_else) {
+            std::cout << "Trzymacz zostal zmieniony" << std::endl;
             curr_lobby.totem_holder = root["by"].get<int>();
+            std::cout << "Trzymacz zostal zmieniony: " << curr_lobby.totem_holder << std::endl;
+            set_holder_pos(curr_lobby.totem_holder);
+            std::cout << "Trzymacz zprzeszedl" << std::endl;
+        } else {
+            // Odlozono totem
+            clear_totem_holder();
         };
+    };
+
+
+    void clear_totem_holder() {
+        curr_lobby.totem_held_by_me = false;
+        curr_lobby.totem_held_by_else = false;
+        curr_lobby.totem_holder_pos = -1;
     }
 
     void next_turn_response(json &root) {
@@ -1144,6 +1201,17 @@ private:
         lobbyList = std::move(temp_lobby_list);
     }
 
+
+    void set_my_position() {
+        for(int i = 0; curr_lobby.players.size(); i++) {
+            if(curr_lobby.players[i].fd == client_fd) {
+                curr_lobby.position_in_game = i;
+                std::cout << "Moja pozycja: " << i << std::endl;
+                return;
+            }
+        }
+    };
+
     void create_game_respone(json &root) {
         std::cout << "Obecni gracze: " <<root["usernames"].get<std::string>() << std::endl;
         if (root["success"].get<bool>())
@@ -1153,10 +1221,11 @@ private:
 
             setup_usernames(root);
             setup_players(root);
-            position_in_game = root["position"].get<int>();
+            curr_lobby.position_in_game = root["position"].get<int>();
             set_is_owner(true);
             set_in_game(true);
             curr_lobby.owner_name = root["owner"].get<std::string>();
+            //set_my_position();
             //curr_lobby.my_position = root["position"].get<int>();
             std::cout << "Stworzono lobby" << std::endl;
         }
@@ -1249,9 +1318,10 @@ private:
         curr_lobby.usernames = split_msg(root["usernames"].get<std::string>());
 
         std::cout << "pozycja: " <<root["position"].get<int>() << std::endl;
-        position_in_game = root["position"].get<int>();
+        curr_lobby.position_in_game = root["position"].get<int>();
         curr_lobby.owner_name = root["owner"].get<std::string>();
         set_in_game(true);
+        //set_my_position();
     }
 
     void turn_card()
