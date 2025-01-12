@@ -93,17 +93,12 @@ struct Player
                 // Should be handled by other code (before)
                 return EMPTY_CARD;
             }
-            std::cout << "Player with 0 down cards requested turn cards." << std::endl;
-            std::cout << cards_facing_down.size() << std::endl;
             auto rng = std::default_random_engine{};
             std::vector<std::string> temp{};
             std::move(cards_facing_up.begin(), cards_facing_up.end(), std::back_inserter(temp));
             cards_facing_up.erase(cards_facing_up.begin(), cards_facing_up.end());
             std::shuffle(temp.begin(), temp.end(), rng);
             std::move(temp.begin(), temp.end(), std::back_inserter(cards_facing_down));
-            std::cout << "dwon: " << cards_facing_down.size() << std::endl;
-            std::cout << "up: " << cards_facing_up.size() << std::endl;
-
 
             
         }
@@ -191,15 +186,12 @@ public:
         auto it = players.find(player);
         if (it != players.end()) {
             players.erase(it);
-            std::cout << "Player with ID " << player << " has been removed.\n";
             return true;
         } else {
-            std::cout << "Player with ID " << player << " not found.\n";
             return false;
         }
     }
 
-    //May need mutex?
     void set_owner(std::string name) {
         owner_name = name;
     }
@@ -257,10 +249,6 @@ public:
 
         is_started = true;
 
-        for (const auto &player : get_players())
-        {
-            std::cout << player->get_state() << std::endl;
-        }
     }
 
     bool if_next_card_turned_up() const
@@ -333,13 +321,11 @@ public:
     {
         if (totem_mtx.try_lock() && !is_totem_held())
         {
-            std::cout << "Zapano totem!" << std::endl;
             totem_held_by = player_id;
             totem_mtx.unlock();
             totem_cv->notify_all();
             return true;
         }
-        std::cout << "Nie udalo sie zlapac" << std::endl;
         return false;
     }
 
@@ -453,7 +439,8 @@ private:
             "circle_inside_x_red",
             "circle_inside_x_yellow",
             "circle_inside_x_yellow",
-            "circle_inside_x_yellow"
+            "circle_inside_x_yellow",
+            "outward_arrows"
         };
     }
 
@@ -513,8 +500,6 @@ public:
     {
         setup_server_socket();
         setup_epoll();
-
-        std::cout << "Server listening on " << ip_address << ":" << port << "\n";
 
         while (true)
         {
@@ -625,7 +610,6 @@ private:
             close(client_fd);
             return;
         }
-        std::cout << "New client connected: FD=" << client_fd << "\n";
     }
 
     std::string extract_message(std::vector<char> &data)
@@ -649,7 +633,6 @@ private:
 
         if (bytes_received <= 0)
         {
-            std::cout << "[Event handling] Will disconnect client " << player.fd << " as received " << bytes_received << " bytes\n";
             disconnect_client(player);
             return;
         }
@@ -678,19 +661,9 @@ private:
     void send_messages_to_client(Player &player)
     {   
         std::lock_guard<std::mutex> lock(player.msg_mtx);
-       // player.msg_out.insert(player.msg_out.end(), msg_end_marker.begin(), msg_end_marker.end());
-        std::cout<<"Msg for clinet: " << std::endl;
-        for (char c : player.msg_out) {
-            std::cout << c;
-        }
-         std::cout << std::endl;
-
-
-
         int sent_bytes = send(player.fd, player.msg_out.data(), player.msg_out.size(), 0);
         if (sent_bytes <= 0)
         {
-            std::cout << "[Sending] Will disconnect client " << player.fd << " as trying to send returned " << sent_bytes << '\n';
             disconnect_client(player);
             return;
         }
@@ -718,14 +691,7 @@ private:
 
         remove_player_from_waiting_list(disconnected_player.fd);
         players_in_games.erase(disconnected_player.fd);
-        std::cout << "Client disconnected: FD=" << disconnected_player.fd << "\n";
     }
-
-    // void send_message(Player &player, const json &message)
-    // {
-    //     std::string serialized_message = message.dump();
-    //     send(player.fd, serialized_message.c_str(), serialized_message.size(), 0);
-    // }
 
     static void add_message_to_buffer_to_send(Player &player, const json &message)
     {
@@ -762,7 +728,6 @@ private:
     static void send_game_update(Player &player, const std::string &code, json &message)
     {
         message["type"] = "GAME_UPDATE";
-        //message["code"] = code;
         message["response"] = code;
         add_message_to_buffer_to_send(player, message);
     };
@@ -844,7 +809,6 @@ private:
 
         if (action == "LIST_GAMES")
         {
-            std::cout << "Player" <<  player.fd << " requested list of games" << std::endl;
             json response = list_games();
             action = "UPDATE_LOBBIES";
             send_success(player, action, response);
@@ -860,7 +824,6 @@ private:
                 action = "UPDATE_LOBBIES";
                 response = list_games();
                 for (const auto &p : players_out_of_games) {
-                    std::cout << "sending update to" <<  p->fd << std::endl;
                     send_success(*p, action, response);
                 }
             } else {
@@ -878,7 +841,6 @@ private:
                 action = "UPDATE_LOBBIES";
                 response = list_games();
                 for (const auto &p : players_out_of_games) {
-                    std::cout << "sending update to" <<  p->fd << std::endl;
                     send_success(*p, action, response);
                 }
             } else {
@@ -923,7 +885,7 @@ private:
 
     static void run(Game &game)
     {
-        std::cout << "[GAME " << game.get_identifier() << "] Started thread" << std::endl;
+
         std::random_device rd;
         std::mt19937 gen(rd());
         std::uniform_int_distribution<int> no_repeat_dist(3000, 3500);
@@ -962,52 +924,41 @@ private:
 
                 if (has_outwards_arrows(current_card))
                 {   
-                    std::cout << "Oborcenie kart" << std::endl;
                     json one_message = json::object();
-                    std::cout << "Stworzono one msg" << std::endl;
 
                     std::set<std::string> turned_up_cards;
                     bool duel = false;
                     
-                    std::cout << "Przed loopa" << std::endl;
                     for (const auto &player : game.get_players())
                     {
                         std::string card = player->turn_card();
-                        std::cout << "Sprawdzamy czy jest duel" << std::endl;
 
                         send_cards_count(player, game.get_middle_cards_count(), game);
 
                         if (turned_up_cards.contains(card))
                         {
-                            std::cout << "Jest duel!" << std::endl;
 
                             duel = true;
                         }
                         turned_up_cards.insert(card);
-                        std::cout << "Probuje ustawic w one msg, card i fd" << std::endl;
 
 
                         one_message[std::to_string(player->fd)] = card;
-                        std::cout << "Udalo sie" << std::endl;
 
                     }
-                    std::cout << "Wyszlismy" << std::endl;
 
                     send_to_all(game.get_players(), "OUTWARDS_ARROWS_TURNED_CARDS", one_message);
-                    std::cout << "Wyslano outwards info" << std::endl;
-
-
                     
                     if (!duel)
                     {
-                        std::cout << "Nie ma  duel" << std::endl;
 
                         game.next_turn();
                         game.set_turn_of(player_id);
                         send_next_turn(game.get_players(), game.get_current_turn_player().username);
+                        game.put_totem_down();
+                        send_totem_down(game.get_players());
                         continue;
                     }
-                    std::cout << "Po duela" << std::endl;
 
                     // TODO: if same symbols, continue executing code below (wait for totem, all other players will be losers!)
                     // TODO: if not same symbols, continue the loop from the same player
@@ -1020,39 +971,28 @@ private:
             if (game.cards_repeat() && game.totem_cv->wait_for(totem_lock, std::chrono::seconds(5), [&game]()
                                                                { return game.is_totem_held(); }))
             {
-                std::cout << "Wygarno!" << std::endl;
                 int winner_id = game.get_player_holder_id();
-                std::cout << "winner_id: " << winner_id << std::endl;
                 if (has_inwards_arrows(current_card))
                 {
-                    std::cout << "Poza outwards " << std::endl;
                     game.transfer_winner_cards_facing_up_to_middle(winner_id);
                 }
                 else
                 {
-                    std::cout << "Transfer przed " << std::endl;
                     game.transfer_cards_to_losers(current_card, winner_id);
-                    std::cout << "Transfer przesezdl " << std::endl;
                     std::vector<std::shared_ptr<Player>> losers = game.get_losers(current_card, winner_id);
-                    std::cout << "Loser znaleziony" << std::endl;
 
                     send_duel_result(game.get_players(), winner_id, losers);
-                    std::cout << "Duel wyslany" << std::endl;
 
                     game.set_turn_of(losers.back()->fd);
-                    std::cout << "Set turn of zrobiony" << std::endl;
 
                 }
-                std::cout << "Poza outwards " << std::endl;
 
             }
             else if (game.totem_cv->wait_for(totem_lock, max_waiting_ms_mistakenly_hold_totem, [&game]()
                                              { return game.is_totem_held(); }))
             {
-                std::cout << "Punish!" << std::endl;
                 int player_to_be_punished_id = game.get_player_holder_id();
                 game.punish_for_catching_totem_out_of_duel(player_to_be_punished_id);
-                std::cout << "Eneded punish!" << std::endl;
             }
 
             for (auto &player : game.get_players())
@@ -1074,7 +1014,6 @@ private:
             Player &next_turn_player = game.get_current_turn_player();
             send_next_turn(game.get_players(), next_turn_player.username);
         }
-        std::cout << "Game " << game.get_identifier() << " has ended" << std::endl;
     }
 
     json list_games()
@@ -1092,14 +1031,11 @@ private:
                               {"is_started", game.has_been_started()}};
             response["games"].push_back(game_info);
         }
-        std::cout << "Curr games: " <<  response.dump() << std::endl;
         return response;
     }
 
     std::pair<bool, json> create_game(Player &player)
     {
-        // When creating game, player joins and becomes owner
-        // Timestap when player joined lobby
 
         int games_count = games.size();
         if (games_count >= MAX_GAMES_COUNT)
@@ -1112,8 +1048,6 @@ private:
         std::shared_ptr game_ptr = std::make_shared<Game>(game_id);
         games.insert(std::make_pair(game_id, game_ptr));
 
-
-        //Reapiting form join_game, may refactor
         Game &game = *games.at(game_id);
         int player_fd_searched_for = player.fd;
         auto player_it = std::find_if(players_out_of_games.begin(), players_out_of_games.end(), [player_fd_searched_for](const std::shared_ptr<Player> &p)
@@ -1128,15 +1062,12 @@ private:
         players_in_games.insert(std::make_pair(player.fd, game_id));
         game.add_player(player_ptr);
 
-        //May need mutex?
         game.set_owner(player.username);
 
-        //Adding player to players in game
         players_in_games_list.push_back(player_ptr);
 
         remove_player_from_waiting_list(player.fd);
         
-        //Setting up time of joining lobby and ownership (done in game struct but did it in case)
         player.join_lobby_time = std::chrono::steady_clock::now();
         player.is_owner = true;
         player.set_game_id(game.get_identifier());
@@ -1162,14 +1093,6 @@ private:
         }
         Game &game = *games.at(game_id);
 
-        //Move player form in_game_list_to_waiting
-        //Delete him form game
-        //If no players in game - delete TODO
-        //If other players in game - find the oldest TODO
-        //Update Chose Screen and lobby - TODO
-
-
-        //Reapiting form join_game, may refactor
         int player_fd_searched_for = player.fd;
         auto player_it = std::find_if(players_in_games_list.begin(), players_in_games_list.end(), [player_fd_searched_for](const std::shared_ptr<Player> &p)
                                       { return p->fd == player_fd_searched_for; });
@@ -1250,14 +1173,7 @@ private:
 
 
         json response = {{"game_id", game_id},{"usernames", names},{"position", player.get_position()},{"owner", game.get_owner()}, {"fds",fds}};
-        std::cout << "Usarenames in lobby: " << names << std::endl;
-        // TODO: explicitly starting by first player in the game
-        /*
-        if (players_count + 1 == PLAYERS_COUNT_THRESHOLD)
-        {
-            start_game(game);
-        }
-        */
+
         return make_pair(true, response);
     }
 
@@ -1316,7 +1232,6 @@ private:
         // ? despite the player's obvious loss
 
         bool caught = game.catch_totem(player.fd);
-        std::cout << "Totem: " << caught << std::endl;
         if (caught)
         {
             send_totem_held(game.get_players(), player.fd);
@@ -1340,7 +1255,6 @@ private:
     };
 
 
-    //Funtcion to order players by time of joining
     std::pair<std::string, std::string> sort_by_time(std::vector<std::shared_ptr<Player>> players, Player &main_player) {
         std::sort(players.begin(), players.end(), [](const std::shared_ptr<Player>& a, const std::shared_ptr<Player>& b) {
             return a->join_lobby_time < b->join_lobby_time;
@@ -1353,7 +1267,6 @@ private:
             if(player->fd == main_player.fd) {
                 main_player.position_in_game = position;
             }
-            std::cout << position << std::endl;
             position++;
             result += player->username;
             fd += std::to_string(player->fd);
@@ -1361,8 +1274,6 @@ private:
             fd += " ";
 
         }
-        std::cout << "Pozycja gracza w lobby: " << position;
-        std::cout << "Pozycja zapisana: " << main_player.get_position();
 
         return std::make_pair(result, fd);
     }
@@ -1371,7 +1282,6 @@ private:
     void update_players_in_lobby(Player &main_player, std::string &action, json &response) {
         Game &game = *games.at(main_player.get_game_id());
         for (const auto &p : game.get_players()) {
-            std::cout << "In lobby: sending update to" <<  p->fd << std::endl;
             if(main_player.fd != p->fd) {
                 send_success(*p, action, response);
             }
@@ -1381,6 +1291,11 @@ private:
         Game &game = *games.at(main_player.get_game_id());
         if(game.get_owner() == main_player.get_username() && game.get_players().size()) {
             start_game(game);
+
+            json response = list_games();
+            for (const auto &p : players_out_of_games) {
+                send_success(*p, "UPDATE_LOBBIES", response);
+            }
         }
     }
 

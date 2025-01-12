@@ -185,7 +185,6 @@ public:
     JungleSpeedClient(const std::string &ip, uint16_t port)
     {
         client_fd = socket(AF_INET, SOCK_STREAM, 0);
-        std::cout << "fd:" << client_fd << std::endl;
         in_game = false;
         if (client_fd == -1)
         {
@@ -265,11 +264,7 @@ public:
 
     sf::Vector2f center_in_button(const sf::Drawable &drawable, sf::FloatRect bounds) {
         sf::Vector2f v = get_center(drawable);
-        ////std::cout << v.x << " center_in_button " << v.y << std::endl;
-        //std::cout << bounds.height << " center_in_button " << bounds.width << std::endl;
         int y_pos = v.y - (bounds.height/2);
-        //std::cout << "Bounds height" << bounds.height << std::endl;
-               // std::cout << "y" << y_pos << std::endl;
         int x_pos = v.x - (bounds.width/2);
         return sf::Vector2f(x_pos,y_pos);
     };
@@ -288,8 +283,8 @@ public:
             return false;
         }
 
-        for(unsigned int x=0;x<img_size;++x) {
-            for(unsigned int y=0;y<img_size;++y) {
+        for(unsigned int x=0;x<static_cast<unsigned int>(img_size);++x) {
+            for(unsigned int y=0;y<static_cast<unsigned int>(img_size);++y) {
                 sf::Color pixelColor = image.getPixel(
                     x * image.getSize().x / img_size,
                     y * image.getSize().y / img_size
@@ -313,7 +308,6 @@ public:
             failure_msg = "Connection failed";
             //exit(EXIT_FAILURE);
         }
-        std::cout << "Connected to server.\n";
     }
 
     void send_message(const std::string &message)
@@ -355,8 +349,6 @@ public:
 
     void in_lobby_screen(sf::RenderWindow &window) {
 
-
-        //std::cout << "WSZEDLEM" << std::endl;
         window.clear(sf::Color(30, 30, 30));
 
 
@@ -399,7 +391,6 @@ public:
                             if (event.mouseButton.button == sf::Mouse::Left) {
 
                                 if (isClicked(start_btn, sf::Mouse::getPosition(window)) && !game_started) {
-                                    std::cout << curr_lobby.players.size() << std::endl;
                                     if(curr_lobby.players.size() < 2) {
                                         show_warrning = true;
                                         clock.restart();
@@ -408,21 +399,12 @@ public:
                                     }
                                 }
                                 if (isClicked(turnCardBtn, sf::Mouse::getPosition(window))) {
-                                    std::cout << "Klikinieto obrco karte" << std::endl;
-                                    std::cout << curr_lobby.current_player_turn_name  << std::endl;
-                                    std::cout << curr_lobby.my_name << std::endl;
                                     send_turn_card();      
                                 }
-
-                                // Pobieramy pozycję kursora
-                                sf::Vector2i position = sf::Mouse::getPosition(window);
-                                std::cout << "Pozycja kliknięcia: (" << position.x << ", " << position.y << ")\n";
-                                
                                 continue;
                     }
                 } if ((event.type == sf::Event::KeyPressed) && game_started) {
                     if (event.key.code == sf::Keyboard::Space) {
-                        std::cout << "wcisnieto spacje" << std::endl;
                         curr_lobby.tried_to_catch_totem = true;
                         if(!curr_lobby.totem_held_by_else && !curr_lobby.totem_held_by_me) {
                             catch_totem_window();
@@ -432,8 +414,8 @@ public:
                 }
             } 
 
-        float player_gap = 50.f;  // Odstęp między graczami
-        float x_offset = 800 / 2; 
+       // float player_gap = 50.f;  // Odstęp między graczami
+       // float x_offset = 800 / 2; 
         int form_first = 0;
         int y_pos = 0;
         int x_pos = 0;
@@ -442,10 +424,10 @@ public:
         int hidden_card_y = 0;
         int shown_card_x = 0;
         int shown_card_y = 0;
-        int card_offset = 45;
+        //int card_offset = 45;
 
-        int not_digonal_offset = 90;
-        int digonal_offset = 90/1.41;
+        // not_digonal_offset = 90;
+        //int digonal_offset = 90/1.41;
 
         for(int i=curr_lobby.position_in_game; i>=0;i--) {
 
@@ -470,18 +452,15 @@ public:
             set_card_texture(spriteShown, form_first);
 
             window.draw(playerText);
-            //std::cout << "PLAYER: " << curr_lobby.players[form_first].fd << " " << curr_lobby.players[form_first].has_up_cards << " "
-            //<< curr_lobby.players[form_first].has_down_cards << std::endl;
             if(curr_lobby.players[form_first].has_up_cards) window.draw(spriteShown);
             if(curr_lobby.players[form_first].has_down_cards) window.draw(spriteHidden);
 
             form_first++;
             
         }
-        //int curr_num = curr_lobby.players.size();
+
         int from_last = 0;
-        for(int i=curr_lobby.position_in_game + 1;i<curr_lobby.players.size();i++) {
-            //std::cout << "WSZEDLEM: " << curr_lobby.usernames.size() - position_in_game << std::endl;
+        for(std::vector<Player>::size_type i = curr_lobby.position_in_game + 1; i < curr_lobby.players.size(); ++i) {
 
             get_card_position(7-from_last, x_pos, y_pos, rotation,
                      hidden_card_x, hidden_card_y,
@@ -598,25 +577,16 @@ public:
     void set_holder_pos_and_name(int &fd) {
         int from_last = 0;
        // int form_first = 0;
-        for(int i = 0; i < curr_lobby.players.size(); i++) {
+        for(std::vector<Player>::size_type i = 0; i < curr_lobby.players.size(); ++i) {
              if(curr_lobby.players[i].fd == fd) {
-                curr_lobby.totem_holder_pos = curr_lobby.position_in_game >= i ? 
+                curr_lobby.totem_holder_pos = static_cast<std::vector<Player>::size_type>(curr_lobby.position_in_game) >= i ? 
                     curr_lobby.position_in_game - i : 7 - from_last;
-               
-                std::cout << "Pozycja holdera: " << curr_lobby.totem_holder_pos << std::endl;
-                std::cout << "Potencjalne wywalanie przed curr" << curr_lobby.players[i].username << std::endl;
-                curr_lobby.totem_holder_name = curr_lobby.players[i].username;
-                std::cout << "Potencjalne wywalanie po curr" << std::endl;
-                std::cout << "Imie holdera: " << curr_lobby.totem_holder_name << std::endl;
 
+                curr_lobby.totem_holder_name = curr_lobby.players[i].username;
                 return;
             }
-            if(curr_lobby.position_in_game < i) from_last++;
-            //if(curr_lobby.position_in_game < i) form_first++;
-            std::cout << "i: " << i << std::endl;
+            if(static_cast<std::vector<Player>::size_type>(curr_lobby.position_in_game) < i) from_last++;
         }
-        //std::cout << "Przeszlo " << curr_lobby.totem_holder_pos << std::endl;
-
     }
 
     // drawing totem
@@ -628,16 +598,10 @@ public:
         totem.setTexture(textures[10]);
 
 
-        if(curr_lobby.totem_held_by_me && curr_lobby.tried_to_catch_totem && !totemClock.getElapsedTime().asSeconds() < 0.4) {
-            //std::cout << "tu weszlo" << std::endl;
-           // totem.setPosition(set_in_the_middle(totem.getGlobalBounds(),0,150));
+        if(curr_lobby.totem_held_by_me && curr_lobby.tried_to_catch_totem && !(totemClock.getElapsedTime().asSeconds() < 0.4)) {
             totem_text = createText(font, "You have caught totem!",12,sf::Vector2f(300, 330), sf::Color(100, 200, 100));
-            //totem_text.setPosition(set_in_the_middle(totem.getGlobalBounds(), 100, 0));
-        } else if (!curr_lobby.totem_held_by_me && curr_lobby.tried_to_catch_totem && !totemClock.getElapsedTime().asSeconds() < 0.4) {
-            //std::cout << "Nie zlapano" << std::endl;
-
+        } else if (!curr_lobby.totem_held_by_me && curr_lobby.tried_to_catch_totem && !(totemClock.getElapsedTime().asSeconds() < 0.4)) {
             totem_text = createText(font, "Failed to catch totem!",12,sf::Vector2f(300, 330), sf::Color::Red);
-            //totem.setPosition(set_in_the_middle(totem.getGlobalBounds()));
         }
         totem_text.setPosition(offset_from_middle(100,6));
         window.draw(totem_text);
@@ -689,7 +653,6 @@ public:
                                         sf::Vector2f(100,
                                                     100), sf::Color::White);
             auto [x,y] = center_in_button(btn, text.getGlobalBounds());  
-            //std::cout << x << "x i y " << y << std::endl; 
             text.setPosition(x,y);
             window.draw(text);
         }
@@ -872,12 +835,10 @@ public:
                 if (event.type == sf::Event::MouseButtonPressed) {
                     if (event.mouseButton.button == sf::Mouse::Left) {
                         if (isClicked(join_btn, sf::Mouse::getPosition(window))) {
-                                std::cout << "Stworzono Lobby " << std::endl;
                                 create_game();
                         }
                         for (auto& lobby : lobbyList) {
                             if (isClicked(lobby.button, sf::Mouse::getPosition(window))) {
-                                std::cout << "Dołączono do Lobby " << lobby.id << std::endl;
                                 join_game_click(lobby.id);
                             }
                         }
@@ -963,10 +924,7 @@ public:
         std::vector<json> result;
 
         if(msg.find("}{") != std::string::npos) {
-            std::cout << "Znaleziono " << std::endl;
             std::istringstream stream(msg);
-            std::cout << "Stworzono stream " << std::endl;
-            //std::cout << "msg: " << msg << std::endl;
 
             std::string temp_msg;
             std::string root; 
@@ -978,19 +936,14 @@ public:
 
             while ((end = temp_msg.find("}{", start)) != std::string::npos)  {
                 root = temp_msg.substr(start, end - start + 1);
-                std::cout << temp_msg << " " << std::endl;
                 temp_msg = temp_msg.substr(end - start + 1, temp_msg.size());
-                std::cout << temp_msg << " " << std::endl;
                 result.push_back(json::parse(root));
             }
-            std::cout << "Pozostala wiadomosc: " << temp_msg << std::endl;
             root = temp_msg;
-            std::cout << root << " " << std::endl;
             result.push_back(json::parse(root));
             return result;
         } else {
             result.push_back(json::parse(msg));
-            std::cout << "Parse: Tutaj ok" << std::endl; 
             return result;
         }
 
@@ -999,44 +952,26 @@ public:
 
     void handle_response() {
         while(true) {
-        std::cout << "Zaczynamy odbierac wiadomosc" << std::endl;
         std::string response = receive_message();
-        std::cout << "Konczymy odbierac wiadomosc" << std::endl;
-        std::cout << "Odebrana wiadomosc: " << response << std::endl;
-        //json root;
         std::vector<json> roots;
 
         if (!response.empty())
         {   
             
-            //root = json::parse(response);
-
-            //std::cout << "Server respones: " << root.dump() << std::endl;
-
-            std::cout << "Przed prasem" << std::endl;
             roots = parse_msg(response);
-            //std::cout << "Game created with ID: " << root["game_id"].get<int>() << "\n";
-            //set_is_owner(true);
-           // set_in_game(true);
         }
         else
         {
             in_game = false;
             failure_screen_bool = true;
             failure_msg = "No connection with server.";
-            std::cout << "No response from server.\n";
             return;
         }
 
         for(const json &r : roots) {
             json root = r;
-        std::cout << "Server respones: " << root.dump() << std::endl;
-        std::cout << "Zaczynamy przetwarzac response" << std::endl;
         std::string action = root["response"].get<std::string>();
-        std::cout << "Konczymy przetwarzac response" << std::endl;
 
-
-        std::cout << action << std::endl;
         if(action == "UPDATE_LOBBIES") {
                 update_lobbies(root);
             } else if (action == "CREATE_GAME") {
@@ -1045,39 +980,22 @@ public:
             else if (action == "JOIN_GAME") {
                 join_game_response(root);
             } else if (action == "IN_LOBBY_UPDATE") {
-                std::cout << "Wchodzimy do IN_LOBBY_UPDATE" << std::endl;
                 in_lobby_update(root);
-                std::cout << "Wychodzimy z IN_LOBBY_UPDATE" << std::endl;
             } else if (action == "START") {
-                std::cout << "Game started sucesfully" << std::endl;
                 game_started = true;
                 gameStartedClock.restart();
             } else if(action == "CAN_TURN_CARD") {
-                // Msg only recived by one player
                 set_can_trun_card(true);
             } else if(action == "TURNED_CARD") {
-                // MSG for all players
-                // turn card for player
                 turn_card_response(root);
             } else if(action == "CARDS_COUNTS"){
-            // Set cards from msg;
-            // After every itteration
-            // Only gives state of you own cards;
                 cards_count_response(root);
 
             } else if(action == "NEXT_TURN") {
-                // Set next turn player. 
-                // Sendet to all players
-                // Show player whose turn it is
-               // std::cout << "USTWIAMY TURE" << std::endl;
                 next_turn_response(root);
-
             } else if(action == "TOTEM") {
-                // HELD OR NOT HELD
                 totem_response(root);
             } else if(action == "OUTWARDS_ARROWS_TURNED_CARDS") {
-                // Make msg that it will began shorty and then turn all cords at once
-                //std::cout << "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" << std::endl;
                 is_outward_card = true;
                 parse_players_by_fd_outward(root);
                 outwardClock.restart();
@@ -1094,7 +1012,6 @@ public:
 
     void end_game_response(json &root) {
         int winner_fd = root["Winner"].get<int>();
-        std::cout << "Winner znaleziony" << std::endl;
         game_winner_name = get_player_name(winner_fd);
         if(game_winner_name == username) im_game_winner = true;
         game_has_ended = true;
@@ -1147,38 +1064,22 @@ public:
 private:
 
     void catch_totem_response(json &root) {
-        std::cout<<"totem: " << root["success"].get<bool>()  << std::endl;
-        std::cout<< "treid: " << curr_lobby.tried_to_catch_totem << std::endl;
 
         if(root["success"].get<bool>() == true) {
-            std::cout<< "Zlapano" << std::endl;
             curr_lobby.totem_held_by_me = true;
             curr_lobby.totem_holder_pos = 0;
             totemClock.restart();
         } else if(curr_lobby.tried_to_catch_totem == true && root["success"].get<bool>() == false) {
-            std::cout << "Tu jestem" << std::endl;
             curr_lobby.totem_held_by_me = false;
             totemClock.restart();
             //curr_lobby.tried_to_catch_totem = false;
-        } else if(root["success"].get<bool>() == false) {
-            std::cout << "Jest jakis case" << std::endl;
         }
         
     }
 
     void duel_respones(json &root) {
-        std::cout << "DUEEEEEEEEEEEEEEEEEEEEEEEEL!!!!!!!!!!!!!!!!!" << std::endl;
-        //onw einwer, many loser;
-
         clear_duel();
-
-        // Duel clokc
-        // fidning if im the winner
-        // Set winer in curr_lobby +
-        // Set losers +
-        // Conditinal drawing in function
-        // This function only sets data +
-        //
+        
         curr_lobby.duel_losers = "";
         int winner = root["winner"].get<int>();
         curr_lobby.duel_winner = get_player_name(winner);
@@ -1188,14 +1089,12 @@ private:
         curr_lobby.there_was_duel = true;
 
         for(auto &i : losers) {
-            std::cout << "Losers: " << i << std::endl;
             std::string loser_name = get_player_name(i);
             curr_lobby.duel_losers = curr_lobby.duel_losers + " " + loser_name;
             if(loser_name == username) {
                 curr_lobby.im_loser = true;
             };
         };
-        std::cout << "RESER CLOCLKA!" << std::endl;
         duelClock.restart();
 
     };
@@ -1219,28 +1118,22 @@ private:
 
     void parse_players_by_fd_outward(json &root) {
         for(auto &p : curr_lobby.players) {
-
-            //std::cout << "WCZESNIEJSZY SYMBOL GRACZA -------->" << p.up_card_symbol << std::endl;
-
             p.up_card_symbol = root[std::to_string(p.fd)].get<std::string>();
-
-            //std::cout << "Obecny SYMBOL GRACZA -------->" << p.up_card_symbol << std::endl;
+            find_new_card(p.up_card_symbol, p);
+            p.has_up_cards = true;
         }
     }
 
     void parse_players_by_fd_count(json &root) {
 
         std::string up,down;
-        //std::cout << "Ustawiamy booleona graczy" << std::endl;
         for(auto &p : curr_lobby.players) {
 
             std::istringstream iss(root[std::to_string(p.fd)].get<std::string>());
             iss >> up >> down;
             
-           // std::cout << "Zajmujemy sie graczem: " << p.fd << std::endl;
             p.has_up_cards = (up == "true") ? true : false;
             p.has_down_cards = (down == "true") ? true : false;
-           // std::cout << "!!!!!!!!!!!!!!!Players bool: " <<  p.has_up_cards << p.has_down_cards << std::endl;
         }
 
     }
@@ -1260,13 +1153,9 @@ private:
         if(curr_lobby.totem_held_by_else) {
             curr_lobby.totem_held_by_me = false;
             curr_lobby.totem_held_by_else = true;
-            std::cout << "Trzymacz zostal zmieniony" << std::endl;
             curr_lobby.totem_holder = root["by"].get<int>();
-            std::cout << "Trzymacz zostal zmieniony: " << curr_lobby.totem_holder << std::endl;
             set_holder_pos_and_name(curr_lobby.totem_holder);
-            std::cout << "Trzymacz zprzeszedl" << std::endl;
         } else {
-            // Odlozono totem
             clear_totem_holder();
         };
     };
@@ -1289,7 +1178,6 @@ private:
 
     void next_turn_response(json &root) {
         curr_lobby.current_player_turn_name = root["next_player"].get<std::string>();
-        std::cout << "Curr turn: " << curr_lobby.current_player_turn_name  << std::endl;
         if(curr_lobby.current_player_turn_name == curr_lobby.my_name) {
             can_trun_card = true;
         } else {
@@ -1300,15 +1188,12 @@ private:
 
     void turn_card_response(json &root) {
         int player_fd = root["by"].get<int>();
-
-        //TO cahnge to int
         std::string card = root["card"].get<std::string>();
-
+        can_trun_card = false;
 
         for(auto &player : curr_lobby.players) { 
             if(player.fd == player_fd) {
                 player.up_card_symbol = card;
-                //std::cout << " Pokazywana karta -------------->" << card << std::endl;
                 find_new_card(card, player);
                 break;
             }
@@ -1316,8 +1201,6 @@ private:
     }
 
     void find_new_card(std::string card, Player &player) {
-        
-
 
         if (card == "outward_arrows") {
             player.card_symbol = 1;
@@ -1349,51 +1232,6 @@ private:
         curr_lobby.up_amount = root["up"].get<int>();
         curr_lobby.down_amount = root["down"].get<int>();
         curr_lobby.middle_amount = root["middle"].get<int>();
-
-
-        /*
-        if(curr_lobby.up_amount == 0) {
-            curr_lobby.players[curr_lobby.my_position].has_up_cards = false;
-        } else {
-            curr_lobby.players[curr_lobby.my_position].has_up_cards = true;
-        }
-
-        curr_lobby.down_amount = root["down"].get<int>();
-        if(curr_lobby.down_amount == 0) {
-            curr_lobby.players[curr_lobby.my_position].has_down_cards = false;
-        } else {
-            curr_lobby.players[curr_lobby.my_position].has_down_cards = true;
-        }
-
-        curr_lobby.middle_amount = root["middle"].get<int>();
-        if(curr_lobby.middle_amount == 0) {
-            curr_lobby.cards_in_the_middle = false;
-        } else {
-            curr_lobby.cards_in_the_middle = true;
-        }*/
-
-        std::cout << "Up: " << curr_lobby.up_amount << std::endl;
-        std::cout << "Down: " << curr_lobby.down_amount << std::endl;
-        std::cout << "Middle: " << curr_lobby.middle_amount << std::endl;
-    }
-
-    void display_menu()
-    {
-        std::cout << "\n--- Jungle Speed Client ---\n";
-        std::cout << "1. List Games\n";
-        std::cout << "2. Create Game\n";
-        std::cout << "3. Join Game\n";
-        std::cout << "4. Turn Card\n";
-        std::cout << "5. Catch Totem\n";
-        std::cout << "0. Exit\n";
-        std::cout << "Enter your choice: ";
-    }
-
-    void display_game_window() {
-        std::cout << "\n--- Game window ---\n";
-        std::cout << "1. List Players\n";
-        std::cout << "2. Exit Game\n";
-        std::cout << "3. Start Game\n";
     }
 
     void list_games()
@@ -1408,11 +1246,7 @@ private:
         std::vector<Lobby> temp_lobby_list;
         for (const auto &game : root["games"])
             {
-                std::cout << "Game ID: " << game["game_id"].get<int>()
-                          << " | Players: " << game["player_count"].get<int>()
-                          << " | Started: " << (game["is_started"].get<bool>() ? "Yes" : "No")
-                          << "\n";
-                temp_lobby_list.push_back(createLobby(game["game_id"].get<int>(), game["player_count"].get<int>(), font, sf::Vector2f(50, 20 + temp_lobby_list.size() * 70)));
+                if(!game["is_started"].get<bool>()) temp_lobby_list.push_back(createLobby(game["game_id"].get<int>(), game["player_count"].get<int>(), font, sf::Vector2f(50, 20 + temp_lobby_list.size() * 70)));
         }
         lobbyList = std::move(temp_lobby_list);
     }
@@ -1422,41 +1256,31 @@ private:
         for(int i = 0; curr_lobby.players.size(); i++) {
             if(curr_lobby.players[i].fd == client_fd) {
                 curr_lobby.position_in_game = i;
-                std::cout << "Moja pozycja: " << i << std::endl;
                 return;
             }
         }
     };
 
     void create_game_respone(json &root) {
-        std::cout << "Obecni gracze: " <<root["usernames"].get<std::string>() << std::endl;
         if (root["success"].get<bool>())
         {
-            std::cout << "Game created with ID: " << root["game_id"].get<int>() << "\n";
-            std::cout << "Position: " << root["position"].get<int>() << "\n";
-
             setup_usernames(root);
             setup_players(root);
             curr_lobby.position_in_game = root["position"].get<int>();
             set_is_owner(true);
             set_in_game(true);
             curr_lobby.owner_name = root["owner"].get<std::string>();
-            //set_my_position();
-            //curr_lobby.my_position = root["position"].get<int>();
-            std::cout << "Stworzono lobby" << std::endl;
         }
         else
         {
             set_in_game(false);
             set_is_owner(false);
-            std::cout << "Game creation failed.\n";
         }
     }
 
     void in_lobby_update(json &root) {
         setup_usernames(root);
         setup_players(root);
-        std::cout << "Po updacie w lobby znajduej sie: " << curr_lobby.usernames.size() << std::endl;
         setup_owner(root["owner"].get<std::string>());
 
     }
@@ -1481,17 +1305,6 @@ private:
         request["action"] = "START_GAME";
         send_message(request.dump());
     }
-    void join_game()
-    {
-        int game_id;
-        std::cout << "Enter Game ID to join: ";
-        std::cin >> game_id;
-
-        json request;
-        request["action"] = "JOIN_GAME";
-        request["game_id"] = game_id;
-        send_message(request.dump());
-    }
 
     void join_game_click(int id)
     {
@@ -1505,7 +1318,7 @@ private:
         
         std::vector<Player> temp_players;
 
-        for(int i = 0; i<u.size();i++) {
+        for(std::vector<std::string>::size_type i = 0; i < u.size(); ++i) {
             Player player;
             int fd = std::stoi(f[i]);
             player.fd = fd;
@@ -1524,20 +1337,14 @@ private:
     }
 
     void join_game_response(json &root) {
-        std::cout << "Obecni gracze: " <<root["usernames"].get<std::string>() << std::endl;
-        
+
+        if(root["success"].get<bool>()) {        
         setup_players(root);
-        for(auto &p : curr_lobby.players) {
-            std::cout << "Gracze w players: " << p.username << std::endl;
-        }
-
         curr_lobby.usernames = split_msg(root["usernames"].get<std::string>());
-
-        std::cout << "pozycja: " <<root["position"].get<int>() << std::endl;
         curr_lobby.position_in_game = root["position"].get<int>();
         curr_lobby.owner_name = root["owner"].get<std::string>();
         set_in_game(true);
-        //set_my_position();
+        }
     }
 
     void turn_card()
@@ -1552,6 +1359,7 @@ private:
         if (!response.empty())
         {
             json root = json::parse(response);
+            /*
             if (root.contains("error"))
             {
                 std::cout << "Error: " << root["error"].get<std::string>() << "\n";
@@ -1560,13 +1368,13 @@ private:
             {
                 std::cout << "Turned card: " << root["card"].get<std::string>() << "\n";
             }
+            */
         }
         else
         {
             in_game = false;
             failure_screen_bool = true;
             failure_msg = "No connection with server.";
-            std::cout << "No response from server.\n";
         }
     }
 
@@ -1590,6 +1398,7 @@ private:
         if (!response.empty())
         {
             json root = json::parse(response);
+            /*
             if (root.contains("error"))
             {
                 std::cout << "Error: " << root["error"].get<std::string>() << "\n";
@@ -1597,14 +1406,15 @@ private:
             else
             {
                 std::cout << "Totem caught!\n";
+                
             }
+            */
         }
         else
         {
             in_game = false;
             failure_screen_bool = true;
             failure_msg = "No connection with server.";
-            std::cout << "No response from server.\n";
         }
     }
 
@@ -1631,7 +1441,6 @@ private:
 
         // Dzielimy string na wyrazy, używając strumienia
         while (stream >> word) {
-            std::cout << word << " ";
             words.push_back(word); // Dodajemy każdy wyraz do wektora
         }
 
@@ -1639,7 +1448,6 @@ private:
     }
 
     void setup_owner(std::string name) {
-        std::cout << "Owner is: " << name << std::endl;
         curr_lobby.owner_name = name;
     }
 
@@ -1648,16 +1456,15 @@ private:
         request["action"] = "GET_USERNAME";
         send_message(request.dump());
         std::string response = receive_message();
-                if (!response.empty())
+        if (!response.empty())
         {
             json root = json::parse(response);
             if (root.contains("error"))
             {
-                std::cout << "Error: " << root["error"].get<std::string>() << "\n";
+                //std::cout << "Error: " << root["error"].get<std::string>() << "\n";
             }
             else
             {
-                std::cout << "Nick: " << root["username"].get<std::string>() << "\n";
                 username = root["username"].get<std::string>();
                 curr_lobby.my_name = username;
             }
@@ -1667,7 +1474,6 @@ private:
             in_game = false;
             failure_screen_bool = true;
             failure_msg = "No connection with server.";
-            std::cout << "No response from server.\n";
         }
     }
 
@@ -1675,9 +1481,6 @@ private:
     void get_card_position(int i, int &x_pos, int &y_pos, int &rotation,
                      int &hidden_card_x, int &hidden_card_y,
                      int &shown_card_x, int &shown_card_y) {
-
-
-        //std::cout << "i: " << i << std::endl;
         if(i== 7) {
             x_pos = 700;
             y_pos = 540;
@@ -1808,7 +1611,6 @@ int main(int argc, char *argv[])
     JungleSpeedClient client(ip, port);
     std::thread t1([&]() { client.run_window(); });
     t1.detach();
-    std::cout << client.success_in_connect << std::endl;
     if(client.success_in_connect) client.run();
     return 0;
 }
