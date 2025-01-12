@@ -288,8 +288,8 @@ public:
             return false;
         }
 
-        for(unsigned int x=0;x<img_size;++x) {
-            for(unsigned int y=0;y<img_size;++y) {
+        for(unsigned int x=0;x<static_cast<unsigned int>(img_size);++x) {
+            for(unsigned int y=0;y<static_cast<unsigned int>(img_size);++y) {
                 sf::Color pixelColor = image.getPixel(
                     x * image.getSize().x / img_size,
                     y * image.getSize().y / img_size
@@ -408,7 +408,7 @@ public:
                                     }
                                 }
                                 if (isClicked(turnCardBtn, sf::Mouse::getPosition(window))) {
-                                    std::cout << "Klikinieto obrco karte" << std::endl;
+                                    std::cout << "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!Klikinieto obrco karte" << std::endl;
                                     std::cout << curr_lobby.current_player_turn_name  << std::endl;
                                     std::cout << curr_lobby.my_name << std::endl;
                                     send_turn_card();      
@@ -432,8 +432,8 @@ public:
                 }
             } 
 
-        float player_gap = 50.f;  // Odstęp między graczami
-        float x_offset = 800 / 2; 
+       // float player_gap = 50.f;  // Odstęp między graczami
+       // float x_offset = 800 / 2; 
         int form_first = 0;
         int y_pos = 0;
         int x_pos = 0;
@@ -442,10 +442,10 @@ public:
         int hidden_card_y = 0;
         int shown_card_x = 0;
         int shown_card_y = 0;
-        int card_offset = 45;
+        //int card_offset = 45;
 
-        int not_digonal_offset = 90;
-        int digonal_offset = 90/1.41;
+        // not_digonal_offset = 90;
+        //int digonal_offset = 90/1.41;
 
         for(int i=curr_lobby.position_in_game; i>=0;i--) {
 
@@ -480,7 +480,7 @@ public:
         }
         //int curr_num = curr_lobby.players.size();
         int from_last = 0;
-        for(int i=curr_lobby.position_in_game + 1;i<curr_lobby.players.size();i++) {
+        for(std::vector<Player>::size_type i = curr_lobby.position_in_game + 1; i < curr_lobby.players.size(); ++i) {
             //std::cout << "WSZEDLEM: " << curr_lobby.usernames.size() - position_in_game << std::endl;
 
             get_card_position(7-from_last, x_pos, y_pos, rotation,
@@ -598,9 +598,9 @@ public:
     void set_holder_pos_and_name(int &fd) {
         int from_last = 0;
        // int form_first = 0;
-        for(int i = 0; i < curr_lobby.players.size(); i++) {
+        for(std::vector<Player>::size_type i = 0; i < curr_lobby.players.size(); ++i) {
              if(curr_lobby.players[i].fd == fd) {
-                curr_lobby.totem_holder_pos = curr_lobby.position_in_game >= i ? 
+                curr_lobby.totem_holder_pos = static_cast<std::vector<Player>::size_type>(curr_lobby.position_in_game) >= i ? 
                     curr_lobby.position_in_game - i : 7 - from_last;
                
                 std::cout << "Pozycja holdera: " << curr_lobby.totem_holder_pos << std::endl;
@@ -611,7 +611,7 @@ public:
 
                 return;
             }
-            if(curr_lobby.position_in_game < i) from_last++;
+            if(static_cast<std::vector<Player>::size_type>(curr_lobby.position_in_game) < i) from_last++;
             //if(curr_lobby.position_in_game < i) form_first++;
             std::cout << "i: " << i << std::endl;
         }
@@ -628,12 +628,12 @@ public:
         totem.setTexture(textures[10]);
 
 
-        if(curr_lobby.totem_held_by_me && curr_lobby.tried_to_catch_totem && !totemClock.getElapsedTime().asSeconds() < 0.4) {
+        if(curr_lobby.totem_held_by_me && curr_lobby.tried_to_catch_totem && !(totemClock.getElapsedTime().asSeconds() < 0.4)) {
             //std::cout << "tu weszlo" << std::endl;
            // totem.setPosition(set_in_the_middle(totem.getGlobalBounds(),0,150));
             totem_text = createText(font, "You have caught totem!",12,sf::Vector2f(300, 330), sf::Color(100, 200, 100));
             //totem_text.setPosition(set_in_the_middle(totem.getGlobalBounds(), 100, 0));
-        } else if (!curr_lobby.totem_held_by_me && curr_lobby.tried_to_catch_totem && !totemClock.getElapsedTime().asSeconds() < 0.4) {
+        } else if (!curr_lobby.totem_held_by_me && curr_lobby.tried_to_catch_totem && !(totemClock.getElapsedTime().asSeconds() < 0.4)) {
             //std::cout << "Nie zlapano" << std::endl;
 
             totem_text = createText(font, "Failed to catch totem!",12,sf::Vector2f(300, 330), sf::Color::Red);
@@ -1306,7 +1306,7 @@ private:
 
         //TO cahnge to int
         std::string card = root["card"].get<std::string>();
-
+        can_trun_card = false;
 
         for(auto &player : curr_lobby.players) { 
             if(player.fd == player_fd) {
@@ -1508,7 +1508,7 @@ private:
         
         std::vector<Player> temp_players;
 
-        for(int i = 0; i<u.size();i++) {
+        for(std::vector<std::string>::size_type i = 0; i < u.size(); ++i) {
             Player player;
             int fd = std::stoi(f[i]);
             player.fd = fd;
