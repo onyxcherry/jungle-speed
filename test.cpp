@@ -76,6 +76,13 @@ struct InLobby {
     int totem_holder_pos = -1;
     std::string totem_holder_name = "";
 
+    std::string duel_winner = "";
+    std::string duel_losers = "";
+
+    bool there_was_duel = false;
+                
+    bool im_loser = false;
+    bool many_loser = false;
 
     bool cards_in_the_middle = false;
     int middle_amount = 0;
@@ -142,6 +149,7 @@ class JungleSpeedClient
     std::vector<sf::Texture> textures;
     sf::Clock clock;
     sf::Clock totemClock;
+    sf::Clock duelClock;
 
     bool show_warrning = false;
     sf::Clock outwardClock;
@@ -504,6 +512,7 @@ public:
 
             } else {
                 std::string s = "Player's trun: " +  curr_lobby.current_player_turn_name;
+                duel_info_text(window);
                 cards_counters_text(window);
                 sf::Text currTurnPlayer = createText(font, s, 10, sf::Vector2f(165, 290), sf::Color::White);
                 
@@ -718,6 +727,62 @@ public:
         };
     }
 
+
+
+    //Funtcion to draw duel info
+
+    void duel_info_text(sf::RenderWindow &window) {
+        sf::Text textUp;
+        sf::Text textDown;
+
+
+       if(duelClock.getElapsedTime().asSeconds() < 4) {
+            if(curr_lobby.duel_winner == curr_lobby.my_name) {
+                textUp = createText(font, "You are the winner!",24);
+                textUp.setFillColor(sf::Color(100,200,100));
+                textUp.setPosition(set_in_the_middle(textUp.getGlobalBounds(), 0, -200));
+
+                std::string losers;
+                if(curr_lobby.many_loser) {
+                    losers = "The losers are:" + curr_lobby.duel_losers;
+                } else {
+                    losers = "Loser is" + curr_lobby.duel_losers;
+                }
+                textDown = createText(font, losers,24);
+                textDown.setPosition(set_in_the_middle(textDown.getGlobalBounds(), 0, -175));
+
+
+            } else if(curr_lobby.im_loser) {
+                textUp = createText(font, "You have lost the duel!",24);
+                textUp.setFillColor(sf::Color::Red);
+                textUp.setPosition(set_in_the_middle(textUp.getGlobalBounds(), 0, -200));
+
+                std::string winner = "The winner is " + curr_lobby.duel_winner;
+
+                textDown = createText(font, winner,24);
+                textDown.setPosition(set_in_the_middle(textDown.getGlobalBounds(), 0, -175));
+
+            } else {
+                std::string winner = "The winner is " + curr_lobby.duel_winner;
+                textUp = createText(font, winner,24);
+                textUp.setPosition(set_in_the_middle(textUp.getGlobalBounds(), 0, -200));
+
+                std::string losers;
+                if(curr_lobby.many_loser) {
+                    losers = "The losers are:" + curr_lobby.duel_losers;
+                } else {
+                    losers = "Loser is" + curr_lobby.duel_losers;
+                }
+
+                textDown = createText(font, losers,24);
+                textDown.setPosition(set_in_the_middle(textDown.getGlobalBounds(), 0, -175));
+            }
+        
+            window.draw(textUp);
+            window.draw(textDown);
+
+       } 
+    }
 
     // Info about who is owner
     void owner_info_text(sf::RenderWindow &window) {
@@ -1029,13 +1094,44 @@ private:
     void duel_respones(json &root) {
         std::cout << "DUEEEEEEEEEEEEEEEEEEEEEEEEL!!!!!!!!!!!!!!!!!" << std::endl;
         //onw einwer, many loser;
+
+        clear_duel();
+
+        // Duel clokc
+        // fidning if im the winner
+        // Set winer in curr_lobby +
+        // Set losers +
+        // Conditinal drawing in function
+        // This function only sets data +
+        //
+        curr_lobby.duel_losers = "";
         int winner = root["winner"].get<int>();
+        curr_lobby.duel_winner = get_player_name(winner);
         std::vector<int> losers = root["losers"].get<std::vector<int>>();
+        if(losers.size()>1) curr_lobby.many_loser = true;
+
+        curr_lobby.there_was_duel = true;
+
         for(auto &i : losers) {
             std::cout << "Losers: " << i << std::endl;
+            curr_lobby.duel_losers = curr_lobby.duel_losers + " " + get_player_name(i);
+            if(i == client_fd) {
+                curr_lobby.im_loser = true;
+            };
         };
+        std::cout << "RESER CLOCLKA!" << std::endl;
+        duelClock.restart();
 
     };
+
+    std::string get_player_name(int &fd) {
+        for(auto &player : curr_lobby.players) {
+            if(player.fd == fd) {
+                return player.username;
+            }
+        }
+        return "";
+    }
 
     void outwards_response() {
 
@@ -1106,6 +1202,13 @@ private:
         curr_lobby.tried_to_catch_totem = false;
         curr_lobby.totem_holder_name = "";
         curr_lobby.totem_holder_pos = -1;
+    }
+
+    void clear_duel() {
+        curr_lobby.there_was_duel = false;
+        curr_lobby.duel_losers = false;
+        curr_lobby.duel_winner = false;
+        curr_lobby.im_loser = false;
     }
 
     void next_turn_response(json &root) {
