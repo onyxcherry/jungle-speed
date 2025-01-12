@@ -57,7 +57,6 @@ struct Player
     std::chrono::time_point<std::chrono::steady_clock> join_lobby_time;
     std::vector<std::string> cards_facing_up{};
     std::vector<std::string> cards_facing_down{};
-    // where to put that? In Game or server?
     std::chrono::time_point<std::chrono::steady_clock> last_action;
     std::vector<char> msg_in{};
     std::vector<char> msg_out{};
@@ -103,9 +102,6 @@ struct Player
             std::move(temp.begin(), temp.end(), std::back_inserter(cards_facing_down));
             std::cout << "dwon: " << cards_facing_down.size() << std::endl;
             std::cout << "up: " << cards_facing_up.size() << std::endl;
-
-
-            
         }
         std::string card = cards_facing_down.back();
         cards_facing_down.pop_back();
@@ -149,7 +145,6 @@ class Game
     std::vector<std::string> cards_in_the_middle{};
     int totem_held_by = NO_TOTEM_HOLDER;
 
-    // TODO: make the variable atomic
     // player fd
     int player_id_turn;
     // <seq, player_id, card>
@@ -238,9 +233,8 @@ public:
     void start()
     {
         std::vector<std::string> deck = generate_cards();
-        // TODO: turn on shuffling cards when all added and good working confirmed
-        // auto rng = std::default_random_engine{};
-        // std::shuffle(deck.begin(), deck.end(), rng);
+        auto rng = std::default_random_engine{};
+        std::shuffle(deck.begin(), deck.end(), rng);
 
         auto players_it = players.begin();
         for (const std::string &card : deck)
@@ -443,7 +437,6 @@ public:
 private:
     std::vector<std::string> generate_cards()
     {
-        // TODO; assert that no more than 2 same cards exist
         return std::vector<std::string>{
             "circle_inside_x_red", 
             "circle_inside_x_red",
@@ -526,8 +519,6 @@ public:
                 exit(EXIT_FAILURE);
             }
 
-            // TODO: beware that system's fd number *cannot* be identifier of a client
-            // as fd is a first-free number, not unique seq!
             if (ee.data.ptr == &SERVER_PTR)
             {
                 accept_new_connection();
@@ -683,9 +674,9 @@ private:
     void send_messages_to_client(Player &player)
     {   
         std::lock_guard<std::mutex> lock(player.msg_mtx);
-       // player.msg_out.insert(player.msg_out.end(), msg_end_marker.begin(), msg_end_marker.end());
-        std::cout<<"Msg for clinet: " << std::endl;
-        for (char c : player.msg_out) {
+        std::cout << "Msg for clinet: " << std::endl;
+        for (char c : player.msg_out)
+        {
             std::cout << c;
         }
          std::cout << std::endl;
@@ -726,12 +717,6 @@ private:
         std::cout << "Client disconnected: FD=" << disconnected_player.fd << "\n";
     }
 
-    // void send_message(Player &player, const json &message)
-    // {
-    //     std::string serialized_message = message.dump();
-    //     send(player.fd, serialized_message.c_str(), serialized_message.size(), 0);
-    // }
-
     static void add_message_to_buffer_to_send(Player &player, const json &message)
     {
         std::string serialized_message = message.dump();
@@ -767,7 +752,6 @@ private:
     static void send_game_update(Player &player, const std::string &code, json &message)
     {
         message["type"] = "GAME_UPDATE";
-        //message["code"] = code;
         message["response"] = code;
         add_message_to_buffer_to_send(player, message);
     };
@@ -858,9 +842,8 @@ private:
         {
             auto [success, response] = create_game(player);
 
-            //sned info of game to all players out of game 
-            //(success) ? send_success(player, action, response) : send_error(player, action, response);
-            if (success) {
+            if (success)
+            {
                 send_success(player, action, response);
                 action = "UPDATE_LOBBIES";
                 response = list_games();
@@ -875,8 +858,8 @@ private:
         else if (action == "JOIN_GAME")
         {
             auto [success, response] = join_game(player, message);
-            //(success) ? send_success(player, action, response) : send_error(player, action, response);
-            if (success) {
+            if (success)
+            {
                 send_success(player, action, response);
                 action = "IN_LOBBY_UPDATE";
                 update_players_in_lobby(player, action, response);
@@ -1013,9 +996,6 @@ private:
                         continue;
                     }
                     std::cout << "Po duela" << std::endl;
-
-                    // TODO: if same symbols, continue executing code below (wait for totem, all other players will be losers!)
-                    // TODO: if not same symbols, continue the loop from the same player
                 }
             }
 
@@ -1104,7 +1084,7 @@ private:
     std::pair<bool, json> create_game(Player &player)
     {
         // When creating game, player joins and becomes owner
-        // Timestap when player joined lobby
+        // Timestamp when player joined lobby
 
         int games_count = games.size();
         if (games_count >= MAX_GAMES_COUNT)
@@ -1117,8 +1097,6 @@ private:
         std::shared_ptr game_ptr = std::make_shared<Game>(game_id);
         games.insert(std::make_pair(game_id, game_ptr));
 
-
-        //Reapiting form join_game, may refactor
         Game &game = *games.at(game_id);
         int player_fd_searched_for = player.fd;
         auto player_it = std::find_if(players_out_of_games.begin(), players_out_of_games.end(), [player_fd_searched_for](const std::shared_ptr<Player> &p)
@@ -1133,7 +1111,6 @@ private:
         players_in_games.insert(std::make_pair(player.fd, game_id));
         game.add_player(player_ptr);
 
-        //May need mutex?
         game.set_owner(player.username);
 
         //Adding player to players in game
@@ -1167,14 +1144,6 @@ private:
         }
         Game &game = *games.at(game_id);
 
-        //Move player form in_game_list_to_waiting
-        //Delete him form game
-        //If no players in game - delete TODO
-        //If other players in game - find the oldest TODO
-        //Update Chose Screen and lobby - TODO
-
-
-        //Reapiting form join_game, may refactor
         int player_fd_searched_for = player.fd;
         auto player_it = std::find_if(players_in_games_list.begin(), players_in_games_list.end(), [player_fd_searched_for](const std::shared_ptr<Player> &p)
                                       { return p->fd == player_fd_searched_for; });
@@ -1256,13 +1225,6 @@ private:
 
         json response = {{"game_id", game_id},{"usernames", names},{"position", player.get_position()},{"owner", game.get_owner()}, {"fds",fds}};
         std::cout << "Usarenames in lobby: " << names << std::endl;
-        // TODO: explicitly starting by first player in the game
-        /*
-        if (players_count + 1 == PLAYERS_COUNT_THRESHOLD)
-        {
-            start_game(game);
-        }
-        */
         return make_pair(true, response);
     }
 
@@ -1315,10 +1277,6 @@ private:
             json response = {{"error", "Cannot catch the totem as the game has not been started."}};
             return make_pair(false, response);
         }
-
-        // ? can the totem be caught when a card is changing?
-        // ? any game-bad state possible?
-        // ? despite the player's obvious loss
 
         bool caught = game.catch_totem(player.fd);
         std::cout << "Totem: " << caught << std::endl;
