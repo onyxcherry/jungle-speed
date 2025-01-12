@@ -1220,11 +1220,13 @@ private:
     void parse_players_by_fd_outward(json &root) {
         for(auto &p : curr_lobby.players) {
 
-            //std::cout << "WCZESNIEJSZY SYMBOL GRACZA -------->" << p.up_card_symbol << std::endl;
+
+            std::cout << "Gracz: " << p.username << std::endl;
+            std::cout << "WCZESNIEJSZY SYMBOL GRACZA -------->" << p.up_card_symbol << std::endl;
 
             p.up_card_symbol = root[std::to_string(p.fd)].get<std::string>();
 
-            //std::cout << "Obecny SYMBOL GRACZA -------->" << p.up_card_symbol << std::endl;
+            std::cout << "Obecny SYMBOL GRACZA -------->" << p.up_card_symbol << std::endl;
         }
     }
 
@@ -1412,7 +1414,7 @@ private:
                           << " | Players: " << game["player_count"].get<int>()
                           << " | Started: " << (game["is_started"].get<bool>() ? "Yes" : "No")
                           << "\n";
-                temp_lobby_list.push_back(createLobby(game["game_id"].get<int>(), game["player_count"].get<int>(), font, sf::Vector2f(50, 20 + temp_lobby_list.size() * 70)));
+                if(!game["is_started"].get<bool>()) temp_lobby_list.push_back(createLobby(game["game_id"].get<int>(), game["player_count"].get<int>(), font, sf::Vector2f(50, 20 + temp_lobby_list.size() * 70)));
         }
         lobbyList = std::move(temp_lobby_list);
     }
@@ -1524,6 +1526,8 @@ private:
     }
 
     void join_game_response(json &root) {
+
+        if(root["success"].get<bool>()) {
         std::cout << "Obecni gracze: " <<root["usernames"].get<std::string>() << std::endl;
         
         setup_players(root);
@@ -1538,6 +1542,7 @@ private:
         curr_lobby.owner_name = root["owner"].get<std::string>();
         set_in_game(true);
         //set_my_position();
+        }
     }
 
     void turn_card()

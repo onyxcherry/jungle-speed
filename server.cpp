@@ -453,7 +453,8 @@ private:
             "circle_inside_x_red",
             "circle_inside_x_yellow",
             "circle_inside_x_yellow",
-            "circle_inside_x_yellow"
+            "circle_inside_x_yellow",
+            "outward_arrows"
         };
     }
 
@@ -923,6 +924,7 @@ private:
 
     static void run(Game &game)
     {
+
         std::cout << "[GAME " << game.get_identifier() << "] Started thread" << std::endl;
         std::random_device rd;
         std::mt19937 gen(rd());
@@ -1381,6 +1383,12 @@ private:
         Game &game = *games.at(main_player.get_game_id());
         if(game.get_owner() == main_player.get_username() && game.get_players().size()) {
             start_game(game);
+
+            json response = list_games();
+            for (const auto &p : players_out_of_games) {
+                std::cout << "sending update to" <<  p->fd << std::endl;
+                send_success(*p, "UPDATE_LOBBIES", response);
+            }
         }
     }
 
