@@ -8,7 +8,7 @@
 #include <sstream>
 #include <SFML/Graphics.hpp>
 #include <thread>
-#include "json.hpp"
+#include <nlohmann/json.hpp>
 
 #define BUFFER_SIZE 1024
 #define WINDOW_WIDTH 800
