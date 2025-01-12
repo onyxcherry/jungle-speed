@@ -92,16 +92,12 @@ struct Player
                 // Should be handled by other code (before)
                 return EMPTY_CARD;
             }
-            std::cout << "Player with 0 down cards requested turn cards." << std::endl;
-            std::cout << cards_facing_down.size() << std::endl;
             auto rng = std::default_random_engine{};
             std::vector<std::string> temp{};
             std::move(cards_facing_up.begin(), cards_facing_up.end(), std::back_inserter(temp));
             cards_facing_up.erase(cards_facing_up.begin(), cards_facing_up.end());
             std::shuffle(temp.begin(), temp.end(), rng);
             std::move(temp.begin(), temp.end(), std::back_inserter(cards_facing_down));
-            std::cout << "dwon: " << cards_facing_down.size() << std::endl;
-            std::cout << "up: " << cards_facing_up.size() << std::endl;
         }
         std::string card = cards_facing_down.back();
         cards_facing_down.pop_back();
@@ -339,13 +335,11 @@ public:
     {
         if (totem_mtx.try_lock() && !is_totem_held())
         {
-            std::cout << "Zapano totem!" << std::endl;
             totem_held_by = player_id;
             totem_mtx.unlock();
             totem_cv->notify_all();
             return true;
         }
-        std::cout << "Nie udalo sie zlapac" << std::endl;
         return false;
     }
 
@@ -685,12 +679,6 @@ private:
     void send_messages_to_client(Player &player)
     {
         std::lock_guard<std::mutex> lock(player.msg_mtx);
-        std::cout << "Msg for clinet: " << std::endl;
-        for (char c : player.msg_out)
-        {
-            std::cout << c;
-        }
-        std::cout << std::endl;
 
         int sent_bytes = send(player.fd, player.msg_out.data(), player.msg_out.size(), 0);
         if (sent_bytes <= 0)
@@ -858,7 +846,6 @@ private:
                 response = list_games();
                 for (const auto &p : players_out_of_games)
                 {
-                    std::cout << "sending update to" << p->fd << std::endl;
                     send_success(*p, action, response);
                 }
             }
@@ -879,7 +866,6 @@ private:
                 response = list_games();
                 for (const auto &p : players_out_of_games)
                 {
-                    std::cout << "sending update to" << p->fd << std::endl;
                     send_success(*p, action, response);
                 }
             }
@@ -970,48 +956,35 @@ private:
 
                 if (has_outwards_arrows(current_card))
                 {
-                    std::cout << "Oborcenie kart" << std::endl;
                     json one_message = json::object();
-                    std::cout << "Stworzono one msg" << std::endl;
 
                     std::set<std::string> turned_up_cards;
                     bool duel = false;
 
-                    std::cout << "Przed loopa" << std::endl;
                     for (const auto &player : game.get_players())
                     {
                         std::string card = player->turn_card();
-                        std::cout << "Sprawdzamy czy jest duel" << std::endl;
 
                         send_cards_count(player, game.get_middle_cards_count(), game);
 
                         if (turned_up_cards.contains(card))
                         {
-                            std::cout << "Jest duel!" << std::endl;
-
                             duel = true;
                         }
                         turned_up_cards.insert(card);
-                        std::cout << "Probuje ustawic w one msg, card i fd" << std::endl;
 
                         one_message[std::to_string(player->fd)] = card;
-                        std::cout << "Udalo sie" << std::endl;
                     }
-                    std::cout << "Wyszlismy" << std::endl;
 
                     send_to_all(game.get_players(), "OUTWARDS_ARROWS_TURNED_CARDS", one_message);
-                    std::cout << "Wyslano outwards info" << std::endl;
 
                     if (!duel)
                     {
-                        std::cout << "Nie ma  duel" << std::endl;
-
                         game.next_turn();
                         game.set_turn_of(player_id);
                         send_next_turn(game.get_players(), game.get_current_turn_player().username);
                         continue;
                     }
-                    std::cout << "Po duela" << std::endl;
                 }
             }
 
@@ -1021,37 +994,26 @@ private:
             if (game.cards_repeat() && game.totem_cv->wait_for(totem_lock, std::chrono::seconds(5), [&game]()
                                                                { return game.is_totem_held(); }))
             {
-                std::cout << "Wygarno!" << std::endl;
                 int winner_id = game.get_player_holder_id();
-                std::cout << "winner_id: " << winner_id << std::endl;
                 if (has_inwards_arrows(current_card))
                 {
-                    std::cout << "Poza outwards " << std::endl;
                     game.transfer_winner_cards_facing_up_to_middle(winner_id);
                 }
                 else
                 {
-                    std::cout << "Transfer przed " << std::endl;
                     game.transfer_cards_to_losers(current_card, winner_id);
-                    std::cout << "Transfer przesezdl " << std::endl;
                     std::vector<std::shared_ptr<Player>> losers = game.get_losers(current_card, winner_id);
-                    std::cout << "Loser znaleziony" << std::endl;
 
                     send_duel_result(game.get_players(), winner_id, losers);
-                    std::cout << "Duel wyslany" << std::endl;
 
                     game.set_turn_of(losers.back()->fd);
-                    std::cout << "Set turn of zrobiony" << std::endl;
                 }
-                std::cout << "Poza outwards " << std::endl;
             }
             else if (game.totem_cv->wait_for(totem_lock, max_waiting_ms_mistakenly_hold_totem, [&game]()
                                              { return game.is_totem_held(); }))
             {
-                std::cout << "Punish!" << std::endl;
                 int player_to_be_punished_id = game.get_player_holder_id();
                 game.punish_for_catching_totem_out_of_duel(player_to_be_punished_id);
-                std::cout << "Eneded punish!" << std::endl;
             }
 
             for (auto &player : game.get_players())
@@ -1091,7 +1053,6 @@ private:
                               {"is_started", game.has_been_started()}};
             response["games"].push_back(game_info);
         }
-        std::cout << "Curr games: " << response.dump() << std::endl;
         return response;
     }
 
@@ -1234,7 +1195,6 @@ private:
         player.set_game_id(game.get_identifier());
 
         json response = {{"game_id", game_id}, {"usernames", names}, {"position", player.get_position()}, {"owner", game.get_owner()}, {"fds", fds}};
-        std::cout << "Usarenames in lobby: " << names << std::endl;
         return make_pair(true, response);
     }
 
@@ -1289,7 +1249,6 @@ private:
         }
 
         bool caught = game.catch_totem(player.fd);
-        std::cout << "Totem: " << caught << std::endl;
         if (caught)
         {
             send_totem_held(game.get_players(), player.fd);
@@ -1328,15 +1287,12 @@ private:
             {
                 main_player.position_in_game = position;
             }
-            std::cout << position << std::endl;
             position++;
             result += player->username;
             fd += std::to_string(player->fd);
             result += " ";
             fd += " ";
         }
-        std::cout << "Pozycja gracza w lobby: " << position;
-        std::cout << "Pozycja zapisana: " << main_player.get_position();
 
         return std::make_pair(result, fd);
     }
@@ -1346,7 +1302,6 @@ private:
         Game &game = *games.at(main_player.get_game_id());
         for (const auto &p : game.get_players())
         {
-            std::cout << "In lobby: sending update to" << p->fd << std::endl;
             if (main_player.fd != p->fd)
             {
                 send_success(*p, action, response);
