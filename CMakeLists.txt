@@ -10,7 +10,7 @@ find_package(nlohmann_json CONFIG REQUIRED)
 find_package(SFML COMPONENTS system window graphics CONFIG REQUIRED)
 
 add_executable(JungleSpeedServer server.cpp)
-add_executable(JungleSpeedClient test.cpp)
+add_executable(JungleSpeedClient client.cpp)
 target_link_libraries(JungleSpeedServer PRIVATE Threads::Threads)
 target_link_libraries(JungleSpeedServer PRIVATE nlohmann_json::nlohmann_json)
 target_link_libraries(JungleSpeedClient PRIVATE Threads::Threads)
