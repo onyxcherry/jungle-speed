@@ -1225,7 +1225,8 @@ private:
             std::cout << "WCZESNIEJSZY SYMBOL GRACZA -------->" << p.up_card_symbol << std::endl;
 
             p.up_card_symbol = root[std::to_string(p.fd)].get<std::string>();
-
+            find_new_card(p.up_card_symbol, p);
+            p.has_up_cards = true;
             std::cout << "Obecny SYMBOL GRACZA -------->" << p.up_card_symbol << std::endl;
         }
     }

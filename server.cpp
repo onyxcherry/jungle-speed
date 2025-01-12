@@ -1007,6 +1007,8 @@ private:
                         game.next_turn();
                         game.set_turn_of(player_id);
                         send_next_turn(game.get_players(), game.get_current_turn_player().username);
+                        game.put_totem_down();
+                        send_totem_down(game.get_players());
                         continue;
                     }
                     std::cout << "Po duela" << std::endl;
