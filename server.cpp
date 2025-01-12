@@ -99,8 +99,6 @@ struct Player
             cards_facing_up.erase(cards_facing_up.begin(), cards_facing_up.end());
             std::shuffle(temp.begin(), temp.end(), rng);
             std::move(temp.begin(), temp.end(), std::back_inserter(cards_facing_down));
-
-            
         }
         std::string card = cards_facing_down.back();
         cards_facing_down.pop_back();
@@ -114,23 +112,28 @@ struct Player
         return std::make_pair(cards_facing_up.size(), cards_facing_down.size());
     }
 
-    std::string get_username() {
+    std::string get_username()
+    {
         return username;
     }
 
-    int get_fd() {
+    int get_fd()
+    {
         return fd;
     }
 
-    int get_position() {
+    int get_position()
+    {
         return position_in_game;
     }
 
-    void set_game_id(int id) {
+    void set_game_id(int id)
+    {
         game_id = id;
     };
 
-    int get_game_id() {
+    int get_game_id()
+    {
         return game_id;
     }
 };
@@ -152,6 +155,7 @@ class Game
     bool next_card_turned_up = false;
     std::unordered_map<std::string, int> cards_repeats{};
     std::string owner_name;
+
 public:
     // changing totem_held_by needs locked totem_mtx
     std::mutex totem_mtx;
@@ -182,21 +186,27 @@ public:
         return false;
     }
 
-    bool remove_player(int player) {
+    bool remove_player(int player)
+    {
         auto it = players.find(player);
-        if (it != players.end()) {
+        if (it != players.end())
+        {
             players.erase(it);
             return true;
-        } else {
+        }
+        else
+        {
             return false;
         }
     }
 
-    void set_owner(std::string name) {
+    void set_owner(std::string name)
+    {
         owner_name = name;
     }
 
-    std::string get_owner() {
+    std::string get_owner()
+    {
         return owner_name;
     }
 
@@ -210,7 +220,8 @@ public:
         return players_to_return;
     }
 
-    std::string cards_state(Player &player) {
+    std::string cards_state(Player &player)
+    {
         Player &p = *get_player(player.fd);
         std::string up = p.cards_facing_up.size() > 0 ? "true" : "false";
         std::string down = p.cards_facing_down.size() > 0 ? "true" : "false";
@@ -248,7 +259,6 @@ public:
         set_turn_of(players_list[0]->fd);
 
         is_started = true;
-
     }
 
     bool if_next_card_turned_up() const
@@ -427,11 +437,11 @@ public:
     }
 
 private:
-    std::vector<std::string> generate_cards(int n = 70)
+    std::vector<std::string> generate_cards()
     {
         // TODO; assert that no more than 2 same cards exist
         return std::vector<std::string>{
-            "circle_inside_x_red", 
+            "circle_inside_x_red",
             "circle_inside_x_red",
             "circle_inside_x_blue",
             "circle_inside_x_yellow",
@@ -440,8 +450,7 @@ private:
             "circle_inside_x_yellow",
             "circle_inside_x_yellow",
             "circle_inside_x_yellow",
-            "outward_arrows"
-        };
+            "outward_arrows"};
     }
 
     std::unordered_map<std::string, int> count_cards_repeats()
@@ -505,6 +514,11 @@ public:
         {
             epoll_event ee;
             int event_count = epoll_wait(epoll_fd, &ee, 1, -1);
+            if (event_count == -1)
+            {
+                perror("epoll_wait");
+                exit(EXIT_FAILURE);
+            }
 
             // TODO: beware that system's fd number *cannot* be identifier of a client
             // as fd is a first-free number, not unique seq!
@@ -613,7 +627,7 @@ private:
     }
 
     std::string extract_message(std::vector<char> &data)
-    {  
+    {
 
         auto it = std::search(data.begin(), data.end(), msg_end_marker.begin(), msg_end_marker.end());
         if (it == data.end())
@@ -637,7 +651,7 @@ private:
             return;
         }
         player.msg_in.insert(player.msg_in.end(), buffer, buffer + bytes_received);
-        
+
         std::string s(player.msg_in.begin(), player.msg_in.end());
         std::string message = extract_message(player.msg_in);
 
@@ -659,7 +673,7 @@ private:
     }
 
     void send_messages_to_client(Player &player)
-    {   
+    {
         std::lock_guard<std::mutex> lock(player.msg_mtx);
         int sent_bytes = send(player.fd, player.msg_out.data(), player.msg_out.size(), 0);
         if (sent_bytes <= 0)
@@ -777,9 +791,9 @@ private:
             {"middle", in_middle_count},
         };
 
-
-        for(auto &p : game.get_players()){
-            message[std::to_string(p->fd)] =  game.cards_state(*p);
+        for (auto &p : game.get_players())
+        {
+            message[std::to_string(p->fd)] = game.cards_state(*p);
         }
         send_game_update(*player, "CARDS_COUNTS", message);
     }
@@ -817,16 +831,20 @@ private:
         {
             auto [success, response] = create_game(player);
 
-            //sned info of game to all players out of game 
+            // sned info of game to all players out of game
             //(success) ? send_success(player, action, response) : send_error(player, action, response);
-            if (success) {
+            if (success)
+            {
                 send_success(player, action, response);
                 action = "UPDATE_LOBBIES";
                 response = list_games();
-                for (const auto &p : players_out_of_games) {
+                for (const auto &p : players_out_of_games)
+                {
                     send_success(*p, action, response);
                 }
-            } else {
+            }
+            else
+            {
                 send_error(player, action, response);
             }
         }
@@ -834,16 +852,20 @@ private:
         {
             auto [success, response] = join_game(player, message);
             //(success) ? send_success(player, action, response) : send_error(player, action, response);
-            if (success) {
+            if (success)
+            {
                 send_success(player, action, response);
                 action = "IN_LOBBY_UPDATE";
                 update_players_in_lobby(player, action, response);
                 action = "UPDATE_LOBBIES";
                 response = list_games();
-                for (const auto &p : players_out_of_games) {
+                for (const auto &p : players_out_of_games)
+                {
                     send_success(*p, action, response);
                 }
-            } else {
+            }
+            else
+            {
                 send_error(player, action, response);
             }
         }
@@ -856,10 +878,14 @@ private:
         {
             auto [success, response] = catch_totem(player);
             (success) ? send_success(player, action, response) : send_error(player, action, response);
-        } else if (action == "GET_USERNAME") {
+        }
+        else if (action == "GET_USERNAME")
+        {
             auto [success, response] = get_username(player);
             (success) ? send_success(player, action, response) : send_error(player, action, response);
-        } else if(action == "START_GAME") {
+        }
+        else if (action == "START_GAME")
+        {
             start_game_by_player(player);
         }
         else
@@ -876,9 +902,10 @@ private:
         t.detach();
     }
 
-    std::pair<bool, json> get_username(Player &player) {
+    std::pair<bool, json> get_username(Player &player)
+    {
 
-        json response = {{"username",player.get_username()}, {"id", player.get_fd()}};
+        json response = {{"username", player.get_username()}, {"id", player.get_fd()}};
 
         return make_pair(true, response);
     }
@@ -894,10 +921,10 @@ private:
         send_to_all(game.get_players(), "START", start_info);
 
         // Set players card in beggining
-            for (auto &player : game.get_players())
-            {
-                send_cards_count(player, game.get_middle_cards_count(), game);
-            }
+        for (auto &player : game.get_players())
+        {
+            send_cards_count(player, game.get_middle_cards_count(), game);
+        }
         // Code to show player whose turn is it in begining
         send_next_turn(game.get_players(), game.get_current_turn_player().username);
 
@@ -923,12 +950,12 @@ private:
                 }
 
                 if (has_outwards_arrows(current_card))
-                {   
+                {
                     json one_message = json::object();
 
                     std::set<std::string> turned_up_cards;
                     bool duel = false;
-                    
+
                     for (const auto &player : game.get_players())
                     {
                         std::string card = player->turn_card();
@@ -942,13 +969,11 @@ private:
                         }
                         turned_up_cards.insert(card);
 
-
                         one_message[std::to_string(player->fd)] = card;
-
                     }
 
                     send_to_all(game.get_players(), "OUTWARDS_ARROWS_TURNED_CARDS", one_message);
-                    
+
                     if (!duel)
                     {
 
@@ -984,9 +1009,7 @@ private:
                     send_duel_result(game.get_players(), winner_id, losers);
 
                     game.set_turn_of(losers.back()->fd);
-
                 }
-
             }
             else if (game.totem_cv->wait_for(totem_lock, max_waiting_ms_mistakenly_hold_totem, [&game]()
                                              { return game.is_totem_held(); }))
@@ -1067,19 +1090,19 @@ private:
         players_in_games_list.push_back(player_ptr);
 
         remove_player_from_waiting_list(player.fd);
-        
+
         player.join_lobby_time = std::chrono::steady_clock::now();
         player.is_owner = true;
         player.set_game_id(game.get_identifier());
 
-
         auto [names, fds] = sort_by_time(game.get_players(), player);
-        json response = {{"game_id", game_id},{"usernames", names},{"position",player.get_position()},{"owner",game.get_owner()},{"fds",fds}};
+        json response = {{"game_id", game_id}, {"usernames", names}, {"position", player.get_position()}, {"owner", game.get_owner()}, {"fds", fds}};
 
         return make_pair(true, response);
     }
 
-    std::pair<bool, json> leave_lobby(Player &player, const json &message) {
+    std::pair<bool, json> leave_lobby(Player &player, const json &message)
+    {
         if (!message.contains("game_id"))
         {
             json response = {{"error", "Missing 'game_id' field."}};
@@ -1110,10 +1133,8 @@ private:
         remove_player_to_in_game_list(player.fd);
         json response = {{"game_id", game_id}};
 
-
         return make_pair(true, response);
     }
-
 
     std::pair<bool, json> join_game(Player &player, const json &message)
     {
@@ -1162,17 +1183,15 @@ private:
         auto player_ptr = *player_it;
         player_ptr->join_lobby_time = std::chrono::steady_clock::now();
 
-
         players_in_games.insert(std::make_pair(player.fd, game.get_identifier()));
         game.add_player(player_ptr);
         remove_player_from_waiting_list(player.fd);
 
-        auto [names, fds] =  sort_by_time(game.get_players(), player);
+        auto [names, fds] = sort_by_time(game.get_players(), player);
 
         player.set_game_id(game.get_identifier());
 
-
-        json response = {{"game_id", game_id},{"usernames", names},{"position", player.get_position()},{"owner", game.get_owner()}, {"fds",fds}};
+        json response = {{"game_id", game_id}, {"usernames", names}, {"position", player.get_position()}, {"owner", game.get_owner()}, {"fds", fds}};
 
         return make_pair(true, response);
     }
@@ -1247,58 +1266,63 @@ private:
             players_out_of_games.end());
     }
 
-    void remove_player_to_in_game_list(int client_fd) {
+    void remove_player_to_in_game_list(int client_fd)
+    {
         players_in_games_list.erase(
             std::remove_if(players_in_games_list.begin(), players_in_games_list.end(), [client_fd](std::shared_ptr<Player> const player)
                            { return player->fd == client_fd; }),
-        players_in_games_list.end());
+            players_in_games_list.end());
     };
 
-
-    std::pair<std::string, std::string> sort_by_time(std::vector<std::shared_ptr<Player>> players, Player &main_player) {
-        std::sort(players.begin(), players.end(), [](const std::shared_ptr<Player>& a, const std::shared_ptr<Player>& b) {
-            return a->join_lobby_time < b->join_lobby_time;
-        });
+    std::pair<std::string, std::string> sort_by_time(std::vector<std::shared_ptr<Player>> players, Player &main_player)
+    {
+        std::sort(players.begin(), players.end(), [](const std::shared_ptr<Player> &a, const std::shared_ptr<Player> &b)
+                  { return a->join_lobby_time < b->join_lobby_time; });
 
         std::string result;
         std::string fd;
         int position = 0;
-        for (const auto& player : players) {
-            if(player->fd == main_player.fd) {
+        for (const auto &player : players)
+        {
+            if (player->fd == main_player.fd)
+            {
                 main_player.position_in_game = position;
             }
             position++;
             result += player->username;
             fd += std::to_string(player->fd);
-            result += " "; 
+            result += " ";
             fd += " ";
-
         }
 
         return std::make_pair(result, fd);
     }
 
-
-    void update_players_in_lobby(Player &main_player, std::string &action, json &response) {
+    void update_players_in_lobby(Player &main_player, std::string &action, json &response)
+    {
         Game &game = *games.at(main_player.get_game_id());
-        for (const auto &p : game.get_players()) {
-            if(main_player.fd != p->fd) {
+        for (const auto &p : game.get_players())
+        {
+            if (main_player.fd != p->fd)
+            {
                 send_success(*p, action, response);
             }
         }
-    } 
-    void start_game_by_player(Player &main_player) {
+    }
+    void start_game_by_player(Player &main_player)
+    {
         Game &game = *games.at(main_player.get_game_id());
-        if(game.get_owner() == main_player.get_username() && game.get_players().size()) {
+        if (game.get_owner() == main_player.get_username() && game.get_players().size())
+        {
             start_game(game);
 
             json response = list_games();
-            for (const auto &p : players_out_of_games) {
+            for (const auto &p : players_out_of_games)
+            {
                 send_success(*p, "UPDATE_LOBBIES", response);
             }
         }
     }
-
 };
 
 int main(int argc, char *argv[])

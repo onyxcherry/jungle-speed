@@ -2,6 +2,14 @@
 
 Jungle Speed game implementation on BSD sockets
 
+## System packages
+
+Needed to build the client
+
+```shell
+sudo apt update && sudo apt install libxrandr-dev libxcursor-dev libudev-dev libflac-dev libvorbis-dev \libgl1-mesa-dev libegl1-mesa-dev libdrm-dev libgbm-dev
+```
+
 ## Build
 
 0. Requirements:
@@ -48,4 +56,14 @@ or pass the options
 
 ### Client
 
-TODO
+Run with default interface and port
+
+```shell
+./build/JungleSpeedClient
+```
+
+or pass the options
+
+```shell
+./build/JungleSpeedClient 0.0.0.0 9000
+```
