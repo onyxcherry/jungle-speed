@@ -441,7 +441,7 @@ public:
     }
 
 private:
-    std::vector<std::string> generate_cards(int n = 70)
+    std::vector<std::string> generate_cards()
     {
         // TODO; assert that no more than 2 same cards exist
         return std::vector<std::string>{
