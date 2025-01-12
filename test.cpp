@@ -747,13 +747,14 @@ public:
         sf::Text textUp;
         sf::Text textDown;
         
-
+        int up_x = -145;
+        int down_x= -120;
 
        if(duelClock.getElapsedTime().asSeconds() < 4) {
             if(curr_lobby.duel_winner == curr_lobby.my_name) {
                 textUp = createText(font, "You are the winner!",24);
                 textUp.setFillColor(sf::Color(100,200,100));
-                textUp.setPosition(set_in_the_middle(textUp.getGlobalBounds(), 0, -170));
+                textUp.setPosition(set_in_the_middle(textUp.getGlobalBounds(), 0, up_x));
 
                 std::string losers;
                 if(curr_lobby.many_loser) {
@@ -762,23 +763,23 @@ public:
                     losers = "Loser is" + curr_lobby.duel_losers;
                 }
                 textDown = createText(font, losers,24);
-                textDown.setPosition(set_in_the_middle(textDown.getGlobalBounds(), 0, -135));
+                textDown.setPosition(set_in_the_middle(textDown.getGlobalBounds(), 0, down_x));
 
 
             } else if(curr_lobby.im_loser) {
                 textUp = createText(font, "You have lost the duel!",24);
                 textUp.setFillColor(sf::Color::Red);
-                textUp.setPosition(set_in_the_middle(textUp.getGlobalBounds(), 0, -170));
+                textUp.setPosition(set_in_the_middle(textUp.getGlobalBounds(), 0, up_x));
 
                 std::string winner = "The winner is " + curr_lobby.duel_winner;
 
                 textDown = createText(font, winner,24);
-                textDown.setPosition(set_in_the_middle(textDown.getGlobalBounds(), 0, -135));
+                textDown.setPosition(set_in_the_middle(textDown.getGlobalBounds(), 0, down_x));
 
             } else {
                 std::string winner = "The winner is " + curr_lobby.duel_winner;
                 textUp = createText(font, winner,24);
-                textUp.setPosition(set_in_the_middle(textUp.getGlobalBounds(), 0, -170));
+                textUp.setPosition(set_in_the_middle(textUp.getGlobalBounds(), 0, up_x));
 
                 std::string losers;
                 if(curr_lobby.many_loser) {
@@ -788,7 +789,7 @@ public:
                 }
 
                 textDown = createText(font, losers,24);
-                textDown.setPosition(set_in_the_middle(textDown.getGlobalBounds(), 0, -135));
+                textDown.setPosition(set_in_the_middle(textDown.getGlobalBounds(), 0, down_x));
             }
         
             window.draw(textUp);
@@ -1188,8 +1189,9 @@ private:
 
         for(auto &i : losers) {
             std::cout << "Losers: " << i << std::endl;
-            curr_lobby.duel_losers = curr_lobby.duel_losers + " " + get_player_name(i);
-            if(i == client_fd) {
+            std::string loser_name = get_player_name(i);
+            curr_lobby.duel_losers = curr_lobby.duel_losers + " " + loser_name;
+            if(loser_name == username) {
                 curr_lobby.im_loser = true;
             };
         };
