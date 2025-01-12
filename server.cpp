@@ -505,6 +505,11 @@ public:
         {
             epoll_event ee;
             int event_count = epoll_wait(epoll_fd, &ee, 1, -1);
+            if (event_count == -1)
+            {
+                perror("epoll_wait");
+                exit(EXIT_FAILURE);
+            }
 
             // TODO: beware that system's fd number *cannot* be identifier of a client
             // as fd is a first-free number, not unique seq!
