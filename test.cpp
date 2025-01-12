@@ -163,12 +163,21 @@ class JungleSpeedClient
     int shown_card_symbol= false;
 
 
-    bool failure_screen = false;
+    std::string game_winner_name = "";
+    bool im_game_winner = false;
+
+    bool failure_screen_bool = false;
 
     
+    bool game_has_ended = false;
+
     std::string failure_msg;
 
     std::vector<char> msg_in{};
+
+    int my_fd;
+
+
 public:
 
     bool success_in_connect = false;    
@@ -182,7 +191,7 @@ public:
         {
             perror("Socket creation failed");
             failure_msg = "Socket creation failed";
-            failure_screen = true;
+            failure_screen_bool = true;
             //exit(EXIT_FAILURE);
             return;
         }
@@ -208,6 +217,8 @@ public:
         load_textures("circle_whole_x_yellow"); //8
         load_textures("circle_whole_x_green"); //9
         load_textures("totem"); //10
+        load_textures("crown"); //11
+        
 
     }
 
@@ -295,11 +306,10 @@ public:
     {
         if (connect(client_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1)
         {
-            failure_screen = true;
+            failure_screen_bool = true;
             in_game = false;
             perror("Connection failed");
             close(client_fd);
-            failure_screen = true;
             failure_msg = "Connection failed";
             //exit(EXIT_FAILURE);
         }
@@ -723,6 +733,8 @@ public:
             sf::Text gameStarted =  createText(font, "Game Started! Good luck!", 
                 18, sf::Vector2f(215, 115), sf::Color(100, 200, 100));
 
+            gameStarted.setPosition(set_in_the_middle(gameStarted.getGlobalBounds(), 0, -130));
+
             window.draw(gameStarted);
         };
     }
@@ -734,13 +746,14 @@ public:
     void duel_info_text(sf::RenderWindow &window) {
         sf::Text textUp;
         sf::Text textDown;
+        
 
 
        if(duelClock.getElapsedTime().asSeconds() < 4) {
             if(curr_lobby.duel_winner == curr_lobby.my_name) {
                 textUp = createText(font, "You are the winner!",24);
                 textUp.setFillColor(sf::Color(100,200,100));
-                textUp.setPosition(set_in_the_middle(textUp.getGlobalBounds(), 0, -200));
+                textUp.setPosition(set_in_the_middle(textUp.getGlobalBounds(), 0, -170));
 
                 std::string losers;
                 if(curr_lobby.many_loser) {
@@ -749,23 +762,23 @@ public:
                     losers = "Loser is" + curr_lobby.duel_losers;
                 }
                 textDown = createText(font, losers,24);
-                textDown.setPosition(set_in_the_middle(textDown.getGlobalBounds(), 0, -175));
+                textDown.setPosition(set_in_the_middle(textDown.getGlobalBounds(), 0, -135));
 
 
             } else if(curr_lobby.im_loser) {
                 textUp = createText(font, "You have lost the duel!",24);
                 textUp.setFillColor(sf::Color::Red);
-                textUp.setPosition(set_in_the_middle(textUp.getGlobalBounds(), 0, -200));
+                textUp.setPosition(set_in_the_middle(textUp.getGlobalBounds(), 0, -170));
 
                 std::string winner = "The winner is " + curr_lobby.duel_winner;
 
                 textDown = createText(font, winner,24);
-                textDown.setPosition(set_in_the_middle(textDown.getGlobalBounds(), 0, -175));
+                textDown.setPosition(set_in_the_middle(textDown.getGlobalBounds(), 0, -135));
 
             } else {
                 std::string winner = "The winner is " + curr_lobby.duel_winner;
                 textUp = createText(font, winner,24);
-                textUp.setPosition(set_in_the_middle(textUp.getGlobalBounds(), 0, -200));
+                textUp.setPosition(set_in_the_middle(textUp.getGlobalBounds(), 0, -170));
 
                 std::string losers;
                 if(curr_lobby.many_loser) {
@@ -775,7 +788,7 @@ public:
                 }
 
                 textDown = createText(font, losers,24);
-                textDown.setPosition(set_in_the_middle(textDown.getGlobalBounds(), 0, -175));
+                textDown.setPosition(set_in_the_middle(textDown.getGlobalBounds(), 0, -135));
             }
         
             window.draw(textUp);
@@ -901,18 +914,10 @@ public:
         while (window.isOpen()) {
             if(in_game) {
                 in_lobby_screen(window);
-            } else if(failure_screen) {
-                sf::Event event;
-                while (window.pollEvent(event)) {
-                    // Obsługa zdarzeń
-                    if (event.type == sf::Event::Closed) {
-                        window.close();
-                    }
-                }
-                window.clear(sf::Color(30, 30, 30));
-                sf::Text info = createText(font, failure_msg, 32);
-                info.setPosition(set_in_the_middle(info.getGlobalBounds()));
-                window.draw(info);
+            } else if(failure_screen_bool) {
+                failure_screen(window);
+            } else if(game_has_ended) {
+                winner_screen(window);
             }
             else {
                 chose_screen(window);
@@ -937,6 +942,20 @@ public:
         close(client_fd);
     }
 
+
+        void failure_screen(sf::RenderWindow &window) {
+            sf::Event event;
+            while (window.pollEvent(event)) {
+                // Obsługa zdarzeń
+                if (event.type == sf::Event::Closed) {
+                    window.close();
+                }
+            }
+            window.clear(sf::Color(30, 30, 30));
+            sf::Text info = createText(font, failure_msg, 32);
+            info.setPosition(set_in_the_middle(info.getGlobalBounds()));
+            window.draw(info);
+        }
 
     std::vector<json> parse_msg (std::string &msg){ 
         
@@ -1002,7 +1021,7 @@ public:
         else
         {
             in_game = false;
-            failure_screen = true;
+            failure_screen_bool = true;
             failure_msg = "No connection with server.";
             std::cout << "No response from server.\n";
             return;
@@ -1065,10 +1084,65 @@ public:
                 duel_respones(root);
             } else if(action == "CATCH_TOTEM") {
                 catch_totem_response(root);
+            } else if(action == "END") {
+               end_game_response(root);        
             }
         }
         }
     }
+
+    void end_game_response(json &root) {
+        int winner_fd = root["Winner"].get<int>();
+        std::cout << "Winner znaleziony" << std::endl;
+        game_winner_name = get_player_name(winner_fd);
+        if(game_winner_name == username) im_game_winner = true;
+        game_has_ended = true;
+        in_game = false;
+    }
+
+    void winner_screen(sf::RenderWindow &window) {
+        sf::Text textUp;
+        sf::Text textDown;
+        sf::Event event;
+        sf::Sprite sprite;
+        window.clear(sf::Color(30, 30, 30));
+        sprite.setTexture(textures[11]);
+
+        while (window.pollEvent(event)) {
+                if (event.type == sf::Event::Closed)
+                    window.close();
+            } 
+
+        if(im_game_winner) {
+            textUp = createText(font, "You have won the game!!", 32);
+            textUp.setFillColor(sf::Color(100,200,100));
+            textUp.setPosition(set_in_the_middle(textUp.getGlobalBounds(),0, -180));
+
+            textDown = createText(font, "Congratulations!", 24);
+            textUp.setFillColor(sf::Color(100,200,100));
+            textDown.setPosition(set_in_the_middle(textDown.getGlobalBounds(),0, -150));
+
+            sprite.setPosition(set_in_the_middle(sprite.getGlobalBounds(), 0 , -230));
+        } else {
+
+
+            textUp = createText(font, game_winner_name, 32);
+            textUp.setFillColor(sf::Color(100,200,100));
+            textUp.setPosition(set_in_the_middle(textUp.getGlobalBounds(),0, -180));
+
+
+            textDown = createText(font, "Is the game winner! Congratulations!!", 24);
+            textUp.setFillColor(sf::Color(100,200,100));
+            textDown.setPosition(set_in_the_middle(textDown.getGlobalBounds(),0,  -150));
+            sprite.setPosition(set_in_the_middle(sprite.getGlobalBounds(), 0 , -230));
+        }
+
+        window.draw(sprite);
+        window.draw(textUp);
+        window.draw(textDown);
+
+    }
+
 private:
 
     void catch_totem_response(json &root) {
@@ -1488,7 +1562,7 @@ private:
         else
         {
             in_game = false;
-            failure_screen = true;
+            failure_screen_bool = true;
             failure_msg = "No connection with server.";
             std::cout << "No response from server.\n";
         }
@@ -1526,7 +1600,7 @@ private:
         else
         {
             in_game = false;
-            failure_screen = true;
+            failure_screen_bool = true;
             failure_msg = "No connection with server.";
             std::cout << "No response from server.\n";
         }
@@ -1589,7 +1663,7 @@ private:
         else
         {
             in_game = false;
-            failure_screen = true;
+            failure_screen_bool = true;
             failure_msg = "No connection with server.";
             std::cout << "No response from server.\n";
         }

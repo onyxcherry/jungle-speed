@@ -446,11 +446,14 @@ private:
         // TODO; assert that no more than 2 same cards exist
         return std::vector<std::string>{
             "circle_inside_x_red", 
-            "circle_inside_x_red", 
-            "circle_inside_x_red", 
-            "circle_inside_x_red", 
-            "circle_inside_x_red", 
-            "circle_inside_x_blue"
+            "circle_inside_x_red",
+            "circle_inside_x_blue",
+            "circle_inside_x_yellow",
+            "circle_inside_x_red",
+            "circle_inside_x_red",
+            "circle_inside_x_yellow",
+            "circle_inside_x_yellow",
+            "circle_inside_x_yellow"
         };
     }
 
