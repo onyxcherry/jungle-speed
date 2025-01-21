@@ -888,6 +888,11 @@ private:
         {
             start_game_by_player(player);
         }
+        else if (action == "LEAVE_GAME")
+        {
+            auto [success, response] = leave_game(player, message);
+            (success) ? send_success(player, action, response) : send_error(player, action, response);
+        }
         else
         {
             json error_response = {{"error", "Unknown action."}};
@@ -1110,7 +1115,7 @@ private:
         return make_pair(true, response);
     }
 
-    std::pair<bool, json> leave_lobby(Player &player, const json &message)
+    std::pair<bool, json> leave_game(Player &player, const json &message)
     {
         if (!message.contains("game_id"))
         {
@@ -1138,6 +1143,28 @@ private:
 
         players_out_of_games.push_back(player_ptr);
         game.remove_player(player_fd_searched_for);
+
+        if (game.get_players_count() == 0)
+        {
+            games.erase(game_id);
+        }
+        else if (game.get_owner() == player.get_username())
+        {
+            auto players = game.get_players();
+            auto longest_playing_it = std::min_element(players.begin(), players.end(),
+                                                       [](const std::shared_ptr<Player> &a, const std::shared_ptr<Player> &b)
+                                                       {
+                                                           return a->join_lobby_time < b->join_lobby_time;
+                                                       });
+            if (longest_playing_it != players.end())
+            {
+                game.set_owner((*longest_playing_it)->get_username());
+            }
+            else
+            {
+                game.set_owner(players[0]->get_username());
+            }
+        }
 
         remove_player_to_in_game_list(player.fd);
         json response = {{"game_id", game_id}};
