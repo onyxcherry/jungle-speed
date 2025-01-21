@@ -914,6 +914,13 @@ private:
         return make_pair(true, response);
     }
 
+    bool check_valid_nickname(std::string nickname)
+    {
+        return std::all_of(nickname.begin(), nickname.end(), [](unsigned char c)
+                           { return std::isalnum(c); }) &&
+               3 <= nickname.length() && nickname.length() <= 16;
+    }
+
     void remove_game(int game_id)
     {
         games.erase(game_id);
@@ -1083,6 +1090,12 @@ private:
         }
         std::string nickname = message["nickname"];
 
+        if (!check_valid_nickname(nickname))
+        {
+            json response = {{"error", "The nickname is disallowed. Only 3-16 alphanumeric characters are allowed."}};
+            return make_pair(false, response);
+        }
+
         int game_id = next_game_id++;
 
         std::shared_ptr game_ptr = std::make_shared<Game>(game_id);
@@ -1230,6 +1243,12 @@ private:
             return make_pair(false, response);
         }
         std::string nickname = message["nickname"];
+
+        if (!check_valid_nickname(nickname))
+        {
+            json response = {{"error", "The nickname is disallowed. Only 3-16 alphanumeric characters are allowed."}};
+            return make_pair(false, response);
+        }
 
         int player_fd_searched_for = player.fd;
         if (players_in_games.find(player_fd_searched_for) != players_in_games.end())
