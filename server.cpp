@@ -914,6 +914,11 @@ private:
         return make_pair(true, response);
     }
 
+    void remove_game(int game_id)
+    {
+        games.erase(game_id);
+    }
+
     static void run(Game &game)
     {
 
@@ -1129,23 +1134,43 @@ private:
         }
         Game &game = *games.at(game_id);
 
-        int player_fd_searched_for = player.fd;
-        auto player_it = std::find_if(players_in_games_list.begin(), players_in_games_list.end(), [player_fd_searched_for](const std::shared_ptr<Player> &p)
-                                      { return p->fd == player_fd_searched_for; });
+        if (!message.contains("username"))
+        {
+            json response = {{"error", "Missing 'username' field."}};
+            return make_pair(false, response);
+        }
+        std::string user_to_remove_name = message["username"];
+
+        auto player_it = std::find_if(players_in_games_list.begin(), players_in_games_list.end(), [user_to_remove_name](const std::shared_ptr<Player> &p)
+                                      { return p->username == user_to_remove_name; });
         if (player_it == players_in_games_list.end())
         {
             json response = {{"error", "Cannot find the player."}};
             return make_pair(false, response);
         }
+
+        if (player.get_username() != user_to_remove_name && player.get_username() != game.get_owner())
+        {
+            json response = {{"error", "Cannot remove another player from lobby as its non-owner"}};
+            return make_pair(false, response);
+        }
+
+        auto players_before_removal = game.get_players();
         auto player_ptr = *player_it;
-        players_in_games.erase(player_fd_searched_for);
+        players_in_games.erase(player_ptr->fd);
 
         players_out_of_games.push_back(player_ptr);
-        game.remove_player(player_fd_searched_for);
+        game.remove_player(player_ptr->fd);
+
+        json removed_info = {{"username", player_ptr->get_username()}};
+        for (const auto &p : players_before_removal)
+        {
+            send_success(*p, "REMOVED_PLAYER", removed_info);
+        }
 
         if (game.get_players_count() == 0)
         {
-            games.erase(game_id);
+            remove_game(game_id);
         }
         else if (game.get_owner() == player.get_username())
         {
@@ -1166,6 +1191,18 @@ private:
         }
 
         remove_player_to_in_game_list(player.fd);
+
+        update_lobbies();
+
+        // *intentional* list of current players due to e.g. `position` field
+        // TODO: check or update positions of users in the `sort_by_time` function
+        auto [names, fds] = sort_by_time(game.get_players(), player);
+        for (const auto &p : game.get_players())
+        {
+            json update_game_info = {{"game_id", game_id}, {"usernames", names}, {"position", p->get_position()}, {"owner", game.get_owner()}, {"fds", fds}};
+            send_success(*p, "IN_LOBBY_UPDATE", update_game_info);
+        }
+
         json response = {{"game_id", game_id}};
 
         return make_pair(true, response);
