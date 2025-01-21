@@ -829,7 +829,7 @@ private:
         }
         else if (action == "CREATE_GAME")
         {
-            auto [success, response] = create_game(player);
+            auto [success, response] = create_game(player, message);
 
             // sned info of game to all players out of game
             //(success) ? send_success(player, action, response) : send_error(player, action, response);
@@ -1057,7 +1057,7 @@ private:
         return response;
     }
 
-    std::pair<bool, json> create_game(Player &player)
+    std::pair<bool, json> create_game(Player &player, const json &message)
     {
 
         int games_count = games.size();
@@ -1066,6 +1066,14 @@ private:
             json response = {{"error", "Max games count limit hit."}};
             return make_pair(false, response);
         }
+
+        if (!message.contains("nickname"))
+        {
+            json response = {{"error", "No nickname set."}};
+            return make_pair(false, response);
+        }
+        std::string nickname = message["nickname"];
+
         int game_id = next_game_id++;
 
         std::shared_ptr game_ptr = std::make_shared<Game>(game_id);
@@ -1081,6 +1089,7 @@ private:
             return make_pair(false, response);
         }
         auto player_ptr = *player_it;
+        player_ptr->username = nickname;
 
         players_in_games.insert(std::make_pair(player.fd, game_id));
         game.add_player(player_ptr);
@@ -1151,6 +1160,13 @@ private:
             return make_pair(false, response);
         }
 
+        if (!message.contains("nickname"))
+        {
+            json response = {{"error", "No nickname set."}};
+            return make_pair(false, response);
+        }
+        std::string nickname = message["nickname"];
+
         int player_fd_searched_for = player.fd;
         if (players_in_games.find(player_fd_searched_for) != players_in_games.end())
         {
@@ -1182,6 +1198,7 @@ private:
 
         auto player_ptr = *player_it;
         player_ptr->join_lobby_time = std::chrono::steady_clock::now();
+        player_ptr->username = nickname;
 
         players_in_games.insert(std::make_pair(player.fd, game.get_identifier()));
         game.add_player(player_ptr);
