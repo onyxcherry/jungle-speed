@@ -809,6 +809,15 @@ private:
         send_to_all(players, "DUEL", duel_result_msg);
     }
 
+    void update_lobbies()
+    {
+        json update = list_games();
+        for (const auto &p : players_out_of_games)
+        {
+            send_success(*p, "UPDATE_LOBBIES", update);
+        }
+    }
+
     void process_client_message(Player &player, const json &message)
     {
         if (!message.contains("action"))
@@ -836,12 +845,7 @@ private:
             if (success)
             {
                 send_success(player, action, response);
-                action = "UPDATE_LOBBIES";
-                response = list_games();
-                for (const auto &p : players_out_of_games)
-                {
-                    send_success(*p, action, response);
-                }
+                update_lobbies();
             }
             else
             {
@@ -857,12 +861,7 @@ private:
                 send_success(player, action, response);
                 action = "IN_LOBBY_UPDATE";
                 update_players_in_lobby(player, action, response);
-                action = "UPDATE_LOBBIES";
-                response = list_games();
-                for (const auto &p : players_out_of_games)
-                {
-                    send_success(*p, action, response);
-                }
+                update_lobbies();
             }
             else
             {
@@ -1172,7 +1171,8 @@ private:
         return make_pair(true, response);
     }
 
-    std::pair<bool, json> join_game(Player &player, const json &message)
+    std::pair<bool, json>
+    join_game(Player &player, const json &message)
     {
         if (!message.contains("game_id"))
         {
