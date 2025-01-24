@@ -1153,8 +1153,29 @@ private:
             json response = {{"error", "Missing 'username' field."}};
             return make_pair(false, response);
         }
-
         std::string user_to_remove_name = message["username"];
+
+        if (players_in_games.find(player.fd) == players_in_games.end() || players_in_games.find(player.fd)->second != game_id)
+        {
+            json response = {{"error", "Requestor not in the given game."}};
+            return make_pair(false, response);
+        }
+
+        auto subject_to_remove = std::find_if(all_players.begin(), all_players.end(), [user_to_remove_name](const std::pair<int, std::shared_ptr<Player>> &p)
+                                              { return p.second->get_username() == user_to_remove_name; });
+        if (subject_to_remove == all_players.end())
+        {
+            json response = {{"error", "This player does not exist."}};
+            return make_pair(false, response);
+        }
+
+        int subject_to_remove_fd = subject_to_remove->second->get_fd();
+        if (players_in_games.find(subject_to_remove_fd) == players_in_games.end() || players_in_games.find(subject_to_remove_fd)->second != game_id)
+        {
+            json response = {{"error", "Subject to remove not in the given game."}};
+            return make_pair(false, response);
+        }
+
         if (player.get_username() != user_to_remove_name && player.get_username() != game.get_owner())
         {
             json response = {{"error", "Cannot remove another player from lobby as its non-owner"}};
@@ -1162,9 +1183,9 @@ private:
         }
 
         auto players_before_removal = game.get_players();
-        players_in_games.erase(player.fd);
-        game.remove_player(player.fd);
-        players_out_of_games.insert(player.fd);
+        players_in_games.erase(subject_to_remove_fd);
+        game.remove_player(subject_to_remove_fd);
+        players_out_of_games.insert(subject_to_remove_fd);
 
         json removed_info = {{"username", user_to_remove_name}};
         for (const auto &p : players_before_removal)
