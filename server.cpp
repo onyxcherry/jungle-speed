@@ -19,6 +19,7 @@
 #include <random>
 #include <tuple>
 #include <set>
+#include <unordered_set>
 
 #define MAX_EVENTS 10
 #define BUFFER_SIZE 1024
@@ -486,7 +487,8 @@ class JungleSpeedServer
 
     // <client_fd, game_number>
     std::unordered_map<int, int> players_in_games;
-    std::vector<std::shared_ptr<Player>> players_out_of_games;
+    std::unordered_set<int> players_out_of_games;
+    std::unordered_map<int, std::shared_ptr<Player>> all_players;
     int next_game_id = 1;
     int next_player_id = 1;
     int SERVER_PTR = 1;
@@ -611,7 +613,8 @@ private:
         player->fd = client_fd;
         player->username = "Player" + std::to_string(next_player_id++);
         player->last_action = std::chrono::steady_clock::now();
-        players_out_of_games.push_back(player);
+        all_players.insert(std::make_pair(client_fd, player));
+        players_out_of_games.insert(client_fd);
 
         epoll_event event;
         event.events = EPOLLIN;
@@ -702,7 +705,8 @@ private:
         epoll_ctl(epoll_fd, EPOLL_CTL_DEL, disconnected_player.fd, nullptr);
         close(disconnected_player.fd);
 
-        remove_player_from_waiting_list(disconnected_player.fd);
+        players_out_of_games.erase(disconnected_player.fd);
+        all_players.erase(disconnected_player.fd);
         players_in_games.erase(disconnected_player.fd);
     }
 
@@ -811,9 +815,10 @@ private:
     void update_lobbies()
     {
         json update = list_games();
-        for (const auto &p : players_out_of_games)
+        for (const int player_fd : players_out_of_games)
         {
-            send_success(*p, "UPDATE_LOBBIES", update);
+            auto player = all_players.at(player_fd);
+            send_success(*player, "UPDATE_LOBBIES", update);
         }
     }
 
@@ -1102,22 +1107,21 @@ private:
 
         Game &game = *games.at(game_id);
         int player_fd_searched_for = player.fd;
-        auto player_it = std::find_if(players_out_of_games.begin(), players_out_of_games.end(), [player_fd_searched_for](const std::shared_ptr<Player> &p)
-                                      { return p->fd == player_fd_searched_for; });
-        if (player_it == players_out_of_games.end())
+
+        if (!players_out_of_games.contains(player_fd_searched_for))
         {
-            json response = {{"error", "Cannot find the player."}};
+            json response = {{"error", "Player already in the game, cannot create another one."}};
             return make_pair(false, response);
         }
-        auto player_ptr = *player_it;
+
+        std::shared_ptr<Player> player_ptr = all_players.at(player_fd_searched_for);
         player_ptr->username = nickname;
 
+        players_out_of_games.erase(player_fd_searched_for);
         players_in_games.insert(std::make_pair(player.fd, game_id));
         game.add_player(player_ptr);
 
         game.set_owner(player.username);
-
-        remove_player_from_waiting_list(player.fd);
 
         player.join_lobby_time = std::chrono::steady_clock::now();
         player.is_owner = true;
@@ -1160,7 +1164,7 @@ private:
         auto players_before_removal = game.get_players();
         players_in_games.erase(player.fd);
         game.remove_player(player.fd);
-        players_out_of_games.push_back(std::make_shared<Player>(player));
+        players_out_of_games.insert(player.fd);
 
         json removed_info = {{"username", user_to_remove_name}};
         for (const auto &p : players_before_removal)
@@ -1256,21 +1260,14 @@ private:
             return make_pair(false, response);
         }
 
-        auto player_it = std::find_if(players_out_of_games.begin(), players_out_of_games.end(), [player_fd_searched_for](const std::shared_ptr<Player> &p)
-                                      { return p->fd == player_fd_searched_for; });
-        if (player_it == players_out_of_games.end())
-        {
-            json response = {{"error", "Cannot find the player."}};
-            return make_pair(false, response);
-        }
+        players_out_of_games.erase(player_fd_searched_for);
+        std::shared_ptr<Player> player_ptr = all_players.at(player_fd_searched_for);
 
-        auto player_ptr = *player_it;
         player_ptr->join_lobby_time = std::chrono::steady_clock::now();
         player_ptr->username = nickname;
 
         players_in_games.insert(std::make_pair(player.fd, game.get_identifier()));
         game.add_player(player_ptr);
-        remove_player_from_waiting_list(player.fd);
 
         auto [names, fds] = sort_by_time(game.get_players(), player);
 
@@ -1343,14 +1340,6 @@ private:
         return make_pair(caught, json::object());
     }
 
-    void remove_player_from_waiting_list(int client_fd)
-    {
-        players_out_of_games.erase(
-            std::remove_if(players_out_of_games.begin(), players_out_of_games.end(), [client_fd](std::shared_ptr<Player> const player)
-                           { return player->fd == client_fd; }),
-            players_out_of_games.end());
-    }
-
     std::pair<std::string, std::string> sort_by_time(std::vector<std::shared_ptr<Player>> players, Player &main_player)
     {
         std::sort(players.begin(), players.end(), [](const std::shared_ptr<Player> &a, const std::shared_ptr<Player> &b)
@@ -1394,9 +1383,10 @@ private:
             start_game(game);
 
             json response = list_games();
-            for (const auto &p : players_out_of_games)
+            for (const int player_fd : players_out_of_games)
             {
-                send_success(*p, "UPDATE_LOBBIES", response);
+                auto player = all_players.at(player_fd);
+                send_success(*player, "UPDATE_LOBBIES", response);
             }
         }
     }
