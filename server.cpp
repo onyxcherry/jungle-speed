@@ -848,6 +848,7 @@ private:
             //(success) ? send_success(player, action, response) : send_error(player, action, response);
             if (success)
             {
+                std::cout << "Player created game" << std::endl;
                 send_success(player, action, response);
                 update_lobbies();
             }
@@ -895,6 +896,10 @@ private:
         {
             auto [success, response] = leave_game(player, message);
             (success) ? send_success(player, action, response) : send_error(player, action, response);
+        } else if (action == "CREATE_USERNAME") {
+            auto [success, response] = create_username(player, message);
+            (success) ? send_success(player, action, response) : send_error(player, action, response);
+
         }
         else
         {
@@ -902,6 +907,32 @@ private:
             send_error(player, "UNKNOWN", error_response);
         }
     }
+
+
+    std::pair<bool, json> create_username(Player &player, const json &message) {
+        std::shared_ptr<Player> player_ptr = all_players.at(player.fd);
+
+        if (!message.contains("username"))
+        {
+            json response = {{"error", "Missing 'game_id' field."}};
+            return make_pair(false, response);
+        }
+
+        std::string chosen_username = message["username"];
+
+        for (const auto& pair : all_players) {
+            std::string temp_username = pair.second->username;
+            if(temp_username == chosen_username) {
+                json response = {{"info", "Username is already taken"}};
+                return make_pair(false, response);
+            }
+        }
+        player_ptr->username = chosen_username;
+        json response = {{"username", chosen_username}};
+        return make_pair(true, response);
+    }
+
+
 
     void start_game(Game &game)
     {
@@ -1086,14 +1117,16 @@ private:
             json response = {{"error", "Max games count limit hit."}};
             return make_pair(false, response);
         }
-
+/*
         if (!message.contains("username"))
         {
             json response = {{"error", "No username set."}};
             return make_pair(false, response);
         }
         std::string username = message["username"];
-
+*/          
+        std::cout << player.username << " Want to create game" << std::endl;
+        std::string username = player.username;
         if (!check_valid_username(username))
         {
             json response = {{"error", "The username is disallowed. Only 3-16 alphanumeric characters are allowed."}};
@@ -1147,6 +1180,7 @@ private:
             return make_pair(false, response);
         }
         Game &game = *games.at(game_id);
+/*
 
         if (!message.contains("username"))
         {
@@ -1154,6 +1188,11 @@ private:
             return make_pair(false, response);
         }
         std::string user_to_remove_name = message["username"];
+
+*/          
+        std::cout << player.username << " Want to leave game" << std::endl;
+
+        std::string user_to_remove_name = player.username;
 
         if (players_in_games.find(player.fd) == players_in_games.end() || players_in_games.find(player.fd)->second != game_id)
         {
@@ -1231,8 +1270,7 @@ private:
         return make_pair(true, response);
     }
 
-    std::pair<bool, json>
-    join_game(Player &player, const json &message)
+    std::pair<bool, json> join_game(Player &player, const json &message)
     {
         if (!message.contains("game_id"))
         {
@@ -1247,12 +1285,16 @@ private:
             return make_pair(false, response);
         }
 
+/*
         if (!message.contains("username"))
         {
             json response = {{"error", "No username set."}};
             return make_pair(false, response);
         }
         std::string username = message["username"];
+*/
+        std::cout << player.username << "Wants to join lobby";
+        std::string username = player.username;
 
         if (!check_valid_username(username))
         {
