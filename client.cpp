@@ -1644,7 +1644,12 @@ private:
                             inputBox.user_input.pop_back();
                         }
                     } else if(event.text.unicode < 128) {
-                        inputBox.user_input = inputBox.user_input + static_cast<char>(event.text.unicode);
+                        char typed_char = static_cast<char>(event.text.unicode);
+                        
+                        if (std::isalpha(typed_char) || std::isdigit(typed_char)) {
+                            inputBox.user_input += typed_char; // Dodaje znak do wprowadzonego tekstu
+                        }
+                        //inputBox.user_input = inputBox.user_input + static_cast<char>(event.text.unicode);
                     }
                     std::cout << inputBox.user_input<< std::endl;
                     inputBox.usetInputText.setString(inputBox.user_input);
