@@ -918,11 +918,11 @@ private:
         return make_pair(true, response);
     }
 
-    bool check_valid_nickname(std::string nickname)
+    bool check_valid_username(std::string username)
     {
-        return std::all_of(nickname.begin(), nickname.end(), [](unsigned char c)
+        return std::all_of(username.begin(), username.end(), [](unsigned char c)
                            { return std::isalnum(c); }) &&
-               3 <= nickname.length() && nickname.length() <= 16;
+               3 <= username.length() && username.length() <= 16;
     }
 
     void remove_game(int game_id)
@@ -1087,16 +1087,16 @@ private:
             return make_pair(false, response);
         }
 
-        if (!message.contains("nickname"))
+        if (!message.contains("username"))
         {
-            json response = {{"error", "No nickname set."}};
+            json response = {{"error", "No username set."}};
             return make_pair(false, response);
         }
-        std::string nickname = message["nickname"];
+        std::string username = message["username"];
 
-        if (!check_valid_nickname(nickname))
+        if (!check_valid_username(username))
         {
-            json response = {{"error", "The nickname is disallowed. Only 3-16 alphanumeric characters are allowed."}};
+            json response = {{"error", "The username is disallowed. Only 3-16 alphanumeric characters are allowed."}};
             return make_pair(false, response);
         }
 
@@ -1115,7 +1115,7 @@ private:
         }
 
         std::shared_ptr<Player> player_ptr = all_players.at(player_fd_searched_for);
-        player_ptr->username = nickname;
+        player_ptr->username = username;
 
         players_out_of_games.erase(player_fd_searched_for);
         players_in_games.insert(std::make_pair(player.fd, game_id));
@@ -1226,16 +1226,16 @@ private:
             return make_pair(false, response);
         }
 
-        if (!message.contains("nickname"))
+        if (!message.contains("username"))
         {
-            json response = {{"error", "No nickname set."}};
+            json response = {{"error", "No username set."}};
             return make_pair(false, response);
         }
-        std::string nickname = message["nickname"];
+        std::string username = message["username"];
 
-        if (!check_valid_nickname(nickname))
+        if (!check_valid_username(username))
         {
-            json response = {{"error", "The nickname is disallowed. Only 3-16 alphanumeric characters are allowed."}};
+            json response = {{"error", "The username is disallowed. Only 3-16 alphanumeric characters are allowed."}};
             return make_pair(false, response);
         }
 
@@ -1264,7 +1264,7 @@ private:
         std::shared_ptr<Player> player_ptr = all_players.at(player_fd_searched_for);
 
         player_ptr->join_lobby_time = std::chrono::steady_clock::now();
-        player_ptr->username = nickname;
+        player_ptr->username = username;
 
         players_in_games.insert(std::make_pair(player.fd, game.get_identifier()));
         game.add_player(player_ptr);
