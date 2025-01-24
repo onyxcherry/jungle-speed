@@ -19,6 +19,7 @@
 #include <random>
 #include <tuple>
 #include <set>
+#include <unordered_set>
 
 #define MAX_EVENTS 10
 #define BUFFER_SIZE 1024
@@ -486,8 +487,8 @@ class JungleSpeedServer
 
     // <client_fd, game_number>
     std::unordered_map<int, int> players_in_games;
-    std::vector<std::shared_ptr<Player>> players_out_of_games;
-    std::vector<std::shared_ptr<Player>> players_in_games_list;
+    std::unordered_set<int> players_out_of_games;
+    std::unordered_map<int, std::shared_ptr<Player>> all_players;
     int next_game_id = 1;
     int next_player_id = 1;
     int SERVER_PTR = 1;
@@ -612,7 +613,8 @@ private:
         player->fd = client_fd;
         player->username = "Player" + std::to_string(next_player_id++);
         player->last_action = std::chrono::steady_clock::now();
-        players_out_of_games.push_back(player);
+        all_players.insert(std::make_pair(client_fd, player));
+        players_out_of_games.insert(client_fd);
 
         epoll_event event;
         event.events = EPOLLIN;
@@ -703,7 +705,8 @@ private:
         epoll_ctl(epoll_fd, EPOLL_CTL_DEL, disconnected_player.fd, nullptr);
         close(disconnected_player.fd);
 
-        remove_player_from_waiting_list(disconnected_player.fd);
+        players_out_of_games.erase(disconnected_player.fd);
+        all_players.erase(disconnected_player.fd);
         players_in_games.erase(disconnected_player.fd);
     }
 
@@ -809,6 +812,16 @@ private:
         send_to_all(players, "DUEL", duel_result_msg);
     }
 
+    void update_lobbies()
+    {
+        json update = list_games();
+        for (const int player_fd : players_out_of_games)
+        {
+            auto player = all_players.at(player_fd);
+            send_success(*player, "UPDATE_LOBBIES", update);
+        }
+    }
+
     void process_client_message(Player &player, const json &message)
     {
         if (!message.contains("action"))
@@ -829,19 +842,14 @@ private:
         }
         else if (action == "CREATE_GAME")
         {
-            auto [success, response] = create_game(player);
+            auto [success, response] = create_game(player, message);
 
             // sned info of game to all players out of game
             //(success) ? send_success(player, action, response) : send_error(player, action, response);
             if (success)
             {
                 send_success(player, action, response);
-                action = "UPDATE_LOBBIES";
-                response = list_games();
-                for (const auto &p : players_out_of_games)
-                {
-                    send_success(*p, action, response);
-                }
+                update_lobbies();
             }
             else
             {
@@ -857,12 +865,7 @@ private:
                 send_success(player, action, response);
                 action = "IN_LOBBY_UPDATE";
                 update_players_in_lobby(player, action, response);
-                action = "UPDATE_LOBBIES";
-                response = list_games();
-                for (const auto &p : players_out_of_games)
-                {
-                    send_success(*p, action, response);
-                }
+                update_lobbies();
             }
             else
             {
@@ -888,6 +891,11 @@ private:
         {
             start_game_by_player(player);
         }
+        else if (action == "LEAVE_GAME")
+        {
+            auto [success, response] = leave_game(player, message);
+            (success) ? send_success(player, action, response) : send_error(player, action, response);
+        }
         else
         {
             json error_response = {{"error", "Unknown action."}};
@@ -908,6 +916,18 @@ private:
         json response = {{"username", player.get_username()}, {"id", player.get_fd()}};
 
         return make_pair(true, response);
+    }
+
+    bool check_valid_username(std::string username)
+    {
+        return std::all_of(username.begin(), username.end(), [](unsigned char c)
+                           { return std::isalnum(c); }) &&
+               3 <= username.length() && username.length() <= 16;
+    }
+
+    void remove_game(int game_id)
+    {
+        games.erase(game_id);
     }
 
     static void run(Game &game)
@@ -1057,7 +1077,7 @@ private:
         return response;
     }
 
-    std::pair<bool, json> create_game(Player &player)
+    std::pair<bool, json> create_game(Player &player, const json &message)
     {
 
         int games_count = games.size();
@@ -1066,6 +1086,20 @@ private:
             json response = {{"error", "Max games count limit hit."}};
             return make_pair(false, response);
         }
+
+        if (!message.contains("username"))
+        {
+            json response = {{"error", "No username set."}};
+            return make_pair(false, response);
+        }
+        std::string username = message["username"];
+
+        if (!check_valid_username(username))
+        {
+            json response = {{"error", "The username is disallowed. Only 3-16 alphanumeric characters are allowed."}};
+            return make_pair(false, response);
+        }
+
         int game_id = next_game_id++;
 
         std::shared_ptr game_ptr = std::make_shared<Game>(game_id);
@@ -1073,23 +1107,21 @@ private:
 
         Game &game = *games.at(game_id);
         int player_fd_searched_for = player.fd;
-        auto player_it = std::find_if(players_out_of_games.begin(), players_out_of_games.end(), [player_fd_searched_for](const std::shared_ptr<Player> &p)
-                                      { return p->fd == player_fd_searched_for; });
-        if (player_it == players_out_of_games.end())
+
+        if (!players_out_of_games.contains(player_fd_searched_for))
         {
-            json response = {{"error", "Cannot find the player."}};
+            json response = {{"error", "Player already in the game, cannot create another one."}};
             return make_pair(false, response);
         }
-        auto player_ptr = *player_it;
 
+        std::shared_ptr<Player> player_ptr = all_players.at(player_fd_searched_for);
+        player_ptr->username = username;
+
+        players_out_of_games.erase(player_fd_searched_for);
         players_in_games.insert(std::make_pair(player.fd, game_id));
         game.add_player(player_ptr);
 
         game.set_owner(player.username);
-
-        players_in_games_list.push_back(player_ptr);
-
-        remove_player_from_waiting_list(player.fd);
 
         player.join_lobby_time = std::chrono::steady_clock::now();
         player.is_owner = true;
@@ -1101,7 +1133,7 @@ private:
         return make_pair(true, response);
     }
 
-    std::pair<bool, json> leave_lobby(Player &player, const json &message)
+    std::pair<bool, json> leave_game(Player &player, const json &message)
     {
         if (!message.contains("game_id"))
         {
@@ -1116,27 +1148,91 @@ private:
         }
         Game &game = *games.at(game_id);
 
-        int player_fd_searched_for = player.fd;
-        auto player_it = std::find_if(players_in_games_list.begin(), players_in_games_list.end(), [player_fd_searched_for](const std::shared_ptr<Player> &p)
-                                      { return p->fd == player_fd_searched_for; });
-        if (player_it == players_in_games_list.end())
+        if (!message.contains("username"))
         {
-            json response = {{"error", "Cannot find the player."}};
+            json response = {{"error", "Missing 'username' field."}};
             return make_pair(false, response);
         }
-        auto player_ptr = *player_it;
-        players_in_games.erase(player_fd_searched_for);
+        std::string user_to_remove_name = message["username"];
 
-        players_out_of_games.push_back(player_ptr);
-        game.remove_player(player_fd_searched_for);
+        if (players_in_games.find(player.fd) == players_in_games.end() || players_in_games.find(player.fd)->second != game_id)
+        {
+            json response = {{"error", "Requestor not in the given game."}};
+            return make_pair(false, response);
+        }
 
-        remove_player_to_in_game_list(player.fd);
+        auto subject_to_remove = std::find_if(all_players.begin(), all_players.end(), [user_to_remove_name](const std::pair<int, std::shared_ptr<Player>> &p)
+                                              { return p.second->get_username() == user_to_remove_name; });
+        if (subject_to_remove == all_players.end())
+        {
+            json response = {{"error", "This player does not exist."}};
+            return make_pair(false, response);
+        }
+
+        int subject_to_remove_fd = subject_to_remove->second->get_fd();
+        if (players_in_games.find(subject_to_remove_fd) == players_in_games.end() || players_in_games.find(subject_to_remove_fd)->second != game_id)
+        {
+            json response = {{"error", "Subject to remove not in the given game."}};
+            return make_pair(false, response);
+        }
+
+        if (player.get_username() != user_to_remove_name && player.get_username() != game.get_owner())
+        {
+            json response = {{"error", "Cannot remove another player from lobby as its non-owner"}};
+            return make_pair(false, response);
+        }
+
+        auto players_before_removal = game.get_players();
+        players_in_games.erase(subject_to_remove_fd);
+        game.remove_player(subject_to_remove_fd);
+        players_out_of_games.insert(subject_to_remove_fd);
+
+        json removed_info = {{"username", user_to_remove_name}};
+        for (const auto &p : players_before_removal)
+        {
+            send_success(*p, "REMOVED_PLAYER", removed_info);
+        }
+
+        if (game.get_players_count() == 0)
+        {
+            remove_game(game_id);
+        }
+        else if (game.get_owner() == player.get_username())
+        {
+            auto players = game.get_players();
+            auto longest_playing_it = std::min_element(players.begin(), players.end(),
+                                                       [](const std::shared_ptr<Player> &a, const std::shared_ptr<Player> &b)
+                                                       {
+                                                           return a->join_lobby_time < b->join_lobby_time;
+                                                       });
+            if (longest_playing_it != players.end())
+            {
+                game.set_owner((*longest_playing_it)->get_username());
+            }
+            else
+            {
+                game.set_owner(players[0]->get_username());
+            }
+        }
+
+        update_lobbies();
+
+        // *intentional* list of current players due to e.g. `position` field
+        // TODO: check or update positions of users in the `sort_by_time` function
+        auto [names, fds] = sort_by_time(game.get_players(), player);
+        for (const auto &p : game.get_players())
+        {
+            json update_game_info = {{"game_id", game_id}, {"usernames", names}, {"position", p->get_position()}, {"owner", game.get_owner()}, {"fds", fds}};
+            send_success(*p, "IN_LOBBY_UPDATE", update_game_info);
+        }
+
         json response = {{"game_id", game_id}};
 
         return make_pair(true, response);
     }
 
-    std::pair<bool, json> join_game(Player &player, const json &message)
+    std::pair<bool, json>
+    join_game(Player &player, const json &message)
     {
         if (!message.contains("game_id"))
         {
@@ -1148,6 +1244,19 @@ private:
         if (games.find(game_id) == games.end())
         {
             json response = {{"error", "Game not found."}};
+            return make_pair(false, response);
+        }
+
+        if (!message.contains("username"))
+        {
+            json response = {{"error", "No username set."}};
+            return make_pair(false, response);
+        }
+        std::string username = message["username"];
+
+        if (!check_valid_username(username))
+        {
+            json response = {{"error", "The username is disallowed. Only 3-16 alphanumeric characters are allowed."}};
             return make_pair(false, response);
         }
 
@@ -1172,20 +1281,14 @@ private:
             return make_pair(false, response);
         }
 
-        auto player_it = std::find_if(players_out_of_games.begin(), players_out_of_games.end(), [player_fd_searched_for](const std::shared_ptr<Player> &p)
-                                      { return p->fd == player_fd_searched_for; });
-        if (player_it == players_out_of_games.end())
-        {
-            json response = {{"error", "Cannot find the player."}};
-            return make_pair(false, response);
-        }
+        players_out_of_games.erase(player_fd_searched_for);
+        std::shared_ptr<Player> player_ptr = all_players.at(player_fd_searched_for);
 
-        auto player_ptr = *player_it;
         player_ptr->join_lobby_time = std::chrono::steady_clock::now();
+        player_ptr->username = username;
 
         players_in_games.insert(std::make_pair(player.fd, game.get_identifier()));
         game.add_player(player_ptr);
-        remove_player_from_waiting_list(player.fd);
 
         auto [names, fds] = sort_by_time(game.get_players(), player);
 
@@ -1258,22 +1361,6 @@ private:
         return make_pair(caught, json::object());
     }
 
-    void remove_player_from_waiting_list(int client_fd)
-    {
-        players_out_of_games.erase(
-            std::remove_if(players_out_of_games.begin(), players_out_of_games.end(), [client_fd](std::shared_ptr<Player> const player)
-                           { return player->fd == client_fd; }),
-            players_out_of_games.end());
-    }
-
-    void remove_player_to_in_game_list(int client_fd)
-    {
-        players_in_games_list.erase(
-            std::remove_if(players_in_games_list.begin(), players_in_games_list.end(), [client_fd](std::shared_ptr<Player> const player)
-                           { return player->fd == client_fd; }),
-            players_in_games_list.end());
-    };
-
     std::pair<std::string, std::string> sort_by_time(std::vector<std::shared_ptr<Player>> players, Player &main_player)
     {
         std::sort(players.begin(), players.end(), [](const std::shared_ptr<Player> &a, const std::shared_ptr<Player> &b)
@@ -1317,9 +1404,10 @@ private:
             start_game(game);
 
             json response = list_games();
-            for (const auto &p : players_out_of_games)
+            for (const int player_fd : players_out_of_games)
             {
-                send_success(*p, "UPDATE_LOBBIES", response);
+                auto player = all_players.at(player_fd);
+                send_success(*player, "UPDATE_LOBBIES", response);
             }
         }
     }
