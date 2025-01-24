@@ -487,7 +487,6 @@ class JungleSpeedServer
     // <client_fd, game_number>
     std::unordered_map<int, int> players_in_games;
     std::vector<std::shared_ptr<Player>> players_out_of_games;
-    std::vector<std::shared_ptr<Player>> players_in_games_list;
     int next_game_id = 1;
     int next_player_id = 1;
     int SERVER_PTR = 1;
@@ -1118,8 +1117,6 @@ private:
 
         game.set_owner(player.username);
 
-        players_in_games_list.push_back(player_ptr);
-
         remove_player_from_waiting_list(player.fd);
 
         player.join_lobby_time = std::chrono::steady_clock::now();
@@ -1152,16 +1149,8 @@ private:
             json response = {{"error", "Missing 'username' field."}};
             return make_pair(false, response);
         }
+
         std::string user_to_remove_name = message["username"];
-
-        auto player_it = std::find_if(players_in_games_list.begin(), players_in_games_list.end(), [user_to_remove_name](const std::shared_ptr<Player> &p)
-                                      { return p->username == user_to_remove_name; });
-        if (player_it == players_in_games_list.end())
-        {
-            json response = {{"error", "Cannot find the player."}};
-            return make_pair(false, response);
-        }
-
         if (player.get_username() != user_to_remove_name && player.get_username() != game.get_owner())
         {
             json response = {{"error", "Cannot remove another player from lobby as its non-owner"}};
@@ -1169,13 +1158,11 @@ private:
         }
 
         auto players_before_removal = game.get_players();
-        auto player_ptr = *player_it;
-        players_in_games.erase(player_ptr->fd);
+        players_in_games.erase(player.fd);
+        game.remove_player(player.fd);
+        players_out_of_games.push_back(std::make_shared<Player>(player));
 
-        players_out_of_games.push_back(player_ptr);
-        game.remove_player(player_ptr->fd);
-
-        json removed_info = {{"username", player_ptr->get_username()}};
+        json removed_info = {{"username", user_to_remove_name}};
         for (const auto &p : players_before_removal)
         {
             send_success(*p, "REMOVED_PLAYER", removed_info);
@@ -1202,8 +1189,6 @@ private:
                 game.set_owner(players[0]->get_username());
             }
         }
-
-        remove_player_to_in_game_list(player.fd);
 
         update_lobbies();
 
@@ -1365,14 +1350,6 @@ private:
                            { return player->fd == client_fd; }),
             players_out_of_games.end());
     }
-
-    void remove_player_to_in_game_list(int client_fd)
-    {
-        players_in_games_list.erase(
-            std::remove_if(players_in_games_list.begin(), players_in_games_list.end(), [client_fd](std::shared_ptr<Player> const player)
-                           { return player->fd == client_fd; }),
-            players_in_games_list.end());
-    };
 
     std::pair<std::string, std::string> sort_by_time(std::vector<std::shared_ptr<Player>> players, Player &main_player)
     {
