@@ -1638,20 +1638,26 @@ private:
                     } 
             }
                 if(inputBox.isActive && event.type == sf::Event::TextEntered) {
-                    std::cout << "COS JEST" << std::endl;
                     if(event.text.unicode == '\b') {
                         if(!inputBox.user_input.empty()) {
                             inputBox.user_input.pop_back();
                         }
                     } else if(event.text.unicode < 128) {
+                        
                         char typed_char = static_cast<char>(event.text.unicode);
                         
                         if (std::isalpha(typed_char) || std::isdigit(typed_char)) {
-                            inputBox.user_input += typed_char; // Dodaje znak do wprowadzonego tekstu
+                            if(inputBox.user_input.size()<10) {
+                                inputBox.errorText.setString("");
+                                inputBox.user_input += typed_char; // Dodaje znak do wprowadzonego tekstu
+                            } else {
+                                inputBox.errorText.setString("Username wil be too long!");
+                                inputBox.errorText.setPosition(set_in_the_middle(inputBox.errorText.getGlobalBounds(), 0, 30));
+                            }
                         }
                         //inputBox.user_input = inputBox.user_input + static_cast<char>(event.text.unicode);
                     }
-                    std::cout << inputBox.user_input<< std::endl;
+                    //std::cout << inputBox.user_input<< std::endl;
                     inputBox.usetInputText.setString(inputBox.user_input);
                     inputBox.usetInputText.setPosition(
                         set_in_the_middle(inputBox.usetInputText.getGlobalBounds()));
