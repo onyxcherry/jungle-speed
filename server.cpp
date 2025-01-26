@@ -433,6 +433,13 @@ public:
                 return make_pair(true, message);
             }
         }
+
+        if (get_players_count() == 0)
+        {
+            json message = {{"Winner", ""}, {"End reason", "0 players"}};
+            return make_pair(true, message);
+        }
+        
         json empty_message = json::object();
         return make_pair(false, empty_message);
     }
