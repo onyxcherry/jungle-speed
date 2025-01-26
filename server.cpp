@@ -1180,20 +1180,37 @@ private:
             return make_pair(false, response);
         }
         Game &game = *games.at(game_id);
-/*
 
-        if (!message.contains("username"))
+        std::string user_to_remove_name;
+        std::cout << "game owner: " << game.get_owner() << std::endl;
+        if (message.contains("username") && player.username == game.get_owner())
         {
-            json response = {{"error", "Missing 'username' field."}};
-            return make_pair(false, response);
+            //json response = {{"error", "Missing 'username' field."}};
+            //return make_pair(false, response);
+            user_to_remove_name = message["username"];
+            std::cout << player.username << " Wants to kick: " << user_to_remove_name  << std::endl;
+        } else {
+            std::cout << player.username << " Want to leave game" << std::endl;
+            user_to_remove_name = player.username;
         }
-        std::string user_to_remove_name = message["username"];
 
-*/          
+        /*
+        for (auto it = all_players.begin(); it != all_players.end(); ++it) {
+            std::shared_ptr<Player> player = it->second;  // Wartość (std::shared_ptr<Player>)
+            if (player) {  // Sprawdzamy, czy wskaźnik nie jest pusty
+                std::cout << "Username: " << player->username << " .Chcenu kiknac: " << user_to_remove_name <<std::endl;  // Dostęp do username
+                if(player->username == user_to_remove_name) {
+                    std::cout << "zgadza sie" << std::endl;
+                }
+        }
+}
+*/
+        //for( auto)
+/*
         std::cout << player.username << " Want to leave game" << std::endl;
 
         std::string user_to_remove_name = player.username;
-
+*/
         if (players_in_games.find(player.fd) == players_in_games.end() || players_in_games.find(player.fd)->second != game_id)
         {
             json response = {{"error", "Requestor not in the given game."}};

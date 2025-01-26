@@ -92,7 +92,7 @@ struct InLobby {
     bool tried_to_catch_totem = false;
 
 
-    int position_in_game;
+    int position_in_game = 0;
     //TODO make it a mp so when you hive an fd you get plaer/
 
     // Can be done by posiotion
@@ -117,6 +117,12 @@ struct InputBox {
     sf::Text errorText;
 };
 
+
+struct KickBtn {
+    sf::RectangleShape btn;
+    sf::Text text;
+    std::string player_name;
+};
 
 Lobby createLobby(int id, int players, const sf::Font& font, sf::Vector2f position) {
     Lobby lobby;
@@ -376,6 +382,10 @@ public:
         // Start Game button
         sf::RectangleShape start_btn;
 
+        //Kick buttons
+        std::vector<KickBtn> kick_buttons;
+
+
         //Showing a flashing message 
         start_warning_text(window);
 
@@ -402,6 +412,84 @@ public:
         }
 
         spriteHidden.setTexture(textures[0]);
+
+
+       // float player_gap = 50.f;  // Odstęp między graczami
+       // float x_offset = 800 / 2; 
+        int form_first = 0;
+        int y_pos = 0;
+        int x_pos = 0;
+        int rotation = 0;
+        int hidden_card_x = 0;
+        int hidden_card_y = 0;
+        int shown_card_x = 0;
+        int shown_card_y = 0;
+        //int card_offset = 45;
+
+        // not_digonal_offset = 90;
+        //int digonal_offset = 90/1.41;
+        if(curr_lobby.players.size() != 0) {
+        for(int i=curr_lobby.position_in_game; i>=0;i--) {
+
+            get_card_position(i, x_pos, y_pos, rotation,
+                     hidden_card_x, hidden_card_y,
+                     shown_card_x, shown_card_y, kick_buttons);
+
+            sf::Text playerText = createText(font, curr_lobby.players[form_first].username, 
+                18, sf::Vector2f(x_pos, y_pos), sf::Color::White);
+            playerText.setRotation(rotation);
+
+
+            //Kick button username
+            kick_buttons[form_first].player_name = curr_lobby.players[form_first].username;
+
+            //Setting cards on screen
+            spriteHidden.setPosition(hidden_card_x,hidden_card_y);
+            spriteHidden.setRotation(rotation);
+
+
+            spriteShown.setPosition(shown_card_x,shown_card_y);
+            spriteShown.setRotation(rotation);
+            set_card_texture(spriteShown, form_first);
+
+            window.draw(playerText);
+            if(curr_lobby.players[form_first].has_up_cards) window.draw(spriteShown);
+            if(curr_lobby.players[form_first].has_down_cards) window.draw(spriteHidden);
+
+            form_first++;
+            
+        }
+
+        int from_last = 0;
+        for(std::vector<Player>::size_type i = curr_lobby.position_in_game + 1; i < curr_lobby.players.size(); ++i) {
+
+            get_card_position(7-from_last, x_pos, y_pos, rotation,
+                     hidden_card_x, hidden_card_y,
+                     shown_card_x, shown_card_y, kick_buttons);
+
+
+            sf::Text playerText = createText(font, curr_lobby.players[i].username, 
+                18, sf::Vector2f(x_pos, y_pos), sf::Color::White);
+            playerText.setRotation(rotation);
+
+            spriteHidden.setPosition(hidden_card_x,hidden_card_y);
+            spriteHidden.setRotation(rotation);
+
+            kick_buttons[form_first + from_last].player_name = curr_lobby.players[form_first +from_last].username;
+
+            spriteShown.setPosition(shown_card_x,shown_card_y);
+            spriteShown.setRotation(rotation);
+            
+            
+            set_card_texture(spriteShown,i);
+            
+            window.draw(playerText);
+            if(curr_lobby.players[i].has_up_cards) window.draw(spriteShown);
+            if(curr_lobby.players[i].has_down_cards) window.draw(spriteHidden);
+            from_last++;
+        }
+        }
+
         //spriteShown.setTexture(textures[0]);
         //set_card_texture(spriteShown);
         while (window.pollEvent(event)) {
@@ -412,6 +500,12 @@ public:
                 if (event.type == sf::Event::MouseButtonPressed) {
                             if (event.mouseButton.button == sf::Mouse::Left) {
 
+                                for (auto& k : kick_buttons) {
+                                    if (isClicked(k.btn, sf::Mouse::getPosition(window)) && k.player_name != curr_lobby.owner_name) {
+                                        std::cout<< "Chcesz wyrzucic: " << k.player_name << std::endl;
+                                        kick_player_by_owner(k.player_name);
+                                    }
+                                }
                                 if (isClicked(start_btn, sf::Mouse::getPosition(window)) && !game_started) {
                                     
                                     if(curr_lobby.players.size() < 2 || curr_lobby.owner_name != username) {
@@ -441,78 +535,7 @@ public:
                 }
             } 
 
-       // float player_gap = 50.f;  // Odstęp między graczami
-       // float x_offset = 800 / 2; 
-        int form_first = 0;
-        int y_pos = 0;
-        int x_pos = 0;
-        int rotation = 0;
-        int hidden_card_x = 0;
-        int hidden_card_y = 0;
-        int shown_card_x = 0;
-        int shown_card_y = 0;
-        //int card_offset = 45;
 
-        // not_digonal_offset = 90;
-        //int digonal_offset = 90/1.41;
-        if(curr_lobby.players.size() != 0) {
-        for(int i=curr_lobby.position_in_game; i>=0;i--) {
-
-            get_card_position(i, x_pos, y_pos, rotation,
-                     hidden_card_x, hidden_card_y,
-                     shown_card_x, shown_card_y);
-
-            sf::Text playerText = createText(font, curr_lobby.players[form_first].username, 
-                18, sf::Vector2f(x_pos, y_pos), sf::Color::White);
-            playerText.setRotation(rotation);
-
-            //Setting cards on screen
-            spriteHidden.setPosition(hidden_card_x,hidden_card_y);
-            spriteHidden.setRotation(rotation);
-
-
-            spriteShown.setPosition(shown_card_x,shown_card_y);
-            spriteShown.setRotation(rotation);
-            set_card_texture(spriteShown, form_first);
-
-            window.draw(playerText);
-            if(curr_lobby.players[form_first].has_up_cards) window.draw(spriteShown);
-            if(curr_lobby.players[form_first].has_down_cards) window.draw(spriteHidden);
-
-            form_first++;
-            
-        }
-
-        int from_last = 0;
-        for(std::vector<Player>::size_type i = curr_lobby.position_in_game + 1; i < curr_lobby.players.size(); ++i) {
-
-            get_card_position(7-from_last, x_pos, y_pos, rotation,
-                     hidden_card_x, hidden_card_y,
-                     shown_card_x, shown_card_y);
-
-
-            sf::Text playerText = createText(font, curr_lobby.players[i].username, 
-                18, sf::Vector2f(x_pos, y_pos), sf::Color::White);
-            playerText.setRotation(rotation);
-
-            spriteHidden.setPosition(hidden_card_x,hidden_card_y);
-            spriteHidden.setRotation(rotation);
-
-
-            spriteShown.setPosition(shown_card_x,shown_card_y);
-            spriteShown.setRotation(rotation);
-            
-            
-            set_card_texture(spriteShown,i);
-            
-            window.draw(playerText);
-            if(curr_lobby.players[i].has_up_cards) window.draw(spriteShown);
-            if(curr_lobby.players[i].has_down_cards) window.draw(spriteHidden);
-            from_last++;
-        }
-
-
-        }
 
             if(!game_started) {
                 window.draw(start_btn);
@@ -522,6 +545,13 @@ public:
                 //window.draw(ownerMsg);
                 info_about_players_text(window);
                 owner_info_text(window);
+
+                for(int i=0; i<kick_buttons.size();i++) {
+                    if(curr_lobby.owner_name == username && curr_lobby.owner_name != kick_buttons[i].player_name) {
+                        window.draw(kick_buttons[i].btn);
+                        window.draw(kick_buttons[i].text);
+                    }
+                }
 
             } else {
                 std::string s = "Player's trun: " +  curr_lobby.current_player_turn_name;
@@ -1065,6 +1095,7 @@ public:
         } else {
             succes_username = false;
             inputBox.errorText.setString("Username is alredy chosen");
+            inputBox.errorText.setPosition(set_in_the_middle(inputBox.errorText.getGlobalBounds(),0,30));
         }
 
     }
@@ -1317,6 +1348,7 @@ private:
         {
             setup_usernames(root);
             setup_players(root);
+            std::cout << "Tu przechodzi" << std::endl;
             curr_lobby.position_in_game = root["position"].get<int>();
             curr_lobby.game_id = root["game_id"].get<int>();
             set_is_owner(true);
@@ -1381,11 +1413,20 @@ private:
         }
 
         curr_lobby.players = temp_players;
+        int i = 0;
+        for(const auto &p : curr_lobby.players) {
+            if(p.username == username) {
+                curr_lobby.position_in_game = i;
+                return;
+            }
+            i++;
+        }
     };
 
     void setup_players(json &root) {
         std::vector<std::string> temp_usernames = split_msg(root["usernames"].get<std::string>());
         std::vector<std::string> temp_fds = split_msg(root["fds"].get<std::string>());
+        curr_lobby.position_in_game = root["position"].get<int>();
         create_players_list(temp_usernames, temp_fds);
     }
 
@@ -1708,6 +1749,16 @@ private:
 
     };
 
+    void kick_player_by_owner(std::string kicked_name) {
+        json request;
+        request["action"] = "LEAVE_GAME";
+        request["game_id"] = curr_lobby.game_id;
+        request["username"] = kicked_name;
+        std::cout << curr_lobby.game_id << std::endl;
+        send_message(request.dump()); 
+    }
+
+
     void leave_game_response(json &root) {
         bool success = root["success"].get<bool>();
         std::string temp_username = root["username"].get<std::string>();
@@ -1716,7 +1767,9 @@ private:
 
     void get_card_position(int i, int &x_pos, int &y_pos, int &rotation,
                      int &hidden_card_x, int &hidden_card_y,
-                     int &shown_card_x, int &shown_card_y) {
+                     int &shown_card_x, int &shown_card_y, std::vector<KickBtn> &kick_buttons) {
+        KickBtn kick_btn;
+        kick_btn.btn = createBtn(sf::Vector2f(40, 30), sf::Color(169, 169, 169));
         if(i== 7) {
             x_pos = 700;
             y_pos = 540;
@@ -1728,6 +1781,11 @@ private:
 
             hidden_card_y = shown_card_y - 63;
             hidden_card_x = shown_card_x + 63;
+            
+            
+            kick_btn.btn.setPosition(set_in_the_middle(kick_btn.btn.getGlobalBounds(), 280, 200));
+
+
 
         } else if(i==6) {
             x_pos = 750;
@@ -1740,6 +1798,7 @@ private:
             shown_card_y = 380;
             shown_card_x = 670;
 
+            kick_btn.btn.setPosition(set_in_the_middle(kick_btn.btn.getGlobalBounds(), 280));
 
         /*
 
@@ -1763,6 +1822,7 @@ private:
             shown_card_y = hidden_card_y + 63;
             shown_card_x = hidden_card_x + 63;
 
+            kick_btn.btn.setPosition(set_in_the_middle(kick_btn.btn.getGlobalBounds(), 280, -200));
 
 /*
             shown_card_y = 137;
@@ -1787,6 +1847,9 @@ private:
             shown_card_y = 140;
             shown_card_x = 475;
 
+            kick_btn.btn.setPosition(set_in_the_middle(kick_btn.btn.getGlobalBounds(), 0, -280));
+
+
         } else if (i==3){
             x_pos = 100;
             y_pos = 60;
@@ -1798,6 +1861,9 @@ private:
             shown_card_y = hidden_card_y + 63;
             shown_card_x = hidden_card_x - 63;
 
+            kick_btn.btn.setPosition(set_in_the_middle(kick_btn.btn.getGlobalBounds(), -280, -200));
+
+
         } else if (i==2){
             x_pos = 40;
             y_pos = 250;
@@ -1807,6 +1873,9 @@ private:
             hidden_card_x = 130;
             shown_card_y = 295;
             shown_card_x = 130;
+
+            kick_btn.btn.setPosition(set_in_the_middle(kick_btn.btn.getGlobalBounds(), -280));
+
         } else if (i==1) {
             x_pos = 70;
             y_pos = 500;
@@ -1817,6 +1886,8 @@ private:
             shown_card_x = 153;
 
             rotation = -315;
+            kick_btn.btn.setPosition(set_in_the_middle(kick_btn.btn.getGlobalBounds(), -280, 200));
+
         } else if (i==0){     
             x_pos = 350;
             y_pos = 550;
@@ -1829,6 +1900,11 @@ private:
             rotation = 0;
         };
 
+
+        kick_btn.text = createText(font, "Kick", 8);
+        kick_btn.text.setPosition(center_in_button(kick_btn.btn, kick_btn.text.getGlobalBounds()));
+
+        kick_buttons.push_back(kick_btn);
     }
 };
 
