@@ -1847,7 +1847,7 @@ private:
             shown_card_y = 140;
             shown_card_x = 475;
 
-            kick_btn.btn.setPosition(set_in_the_middle(kick_btn.btn.getGlobalBounds(), 0, -280));
+            kick_btn.btn.setPosition(set_in_the_middle(kick_btn.btn.getGlobalBounds(), 0, -200));
 
 
         } else if (i==3){
