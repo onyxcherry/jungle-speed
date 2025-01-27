@@ -242,9 +242,8 @@ public:
     void start()
     {
         std::vector<std::string> deck = generate_cards();
-        // TODO: turn on shuffling cards when all added and good working confirmed
-        // auto rng = std::default_random_engine{};
-        // std::shuffle(deck.begin(), deck.end(), rng);
+        auto rng = std::default_random_engine{};
+        std::shuffle(deck.begin(), deck.end(), rng);
 
         auto players_it = players.begin();
         for (const std::string &card : deck)
