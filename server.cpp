@@ -450,7 +450,8 @@ private:
         // TODO; assert that no more than 2 same cards exist
         return std::vector<std::string>{
             "circle_inside_x_red",
-            "circle_inside_x_red",
+            "circle_inside_x_red"
+            /*,
             "circle_inside_x_blue",
             "circle_inside_x_yellow",
             "circle_inside_x_red",
@@ -458,7 +459,7 @@ private:
             "circle_inside_x_yellow",
             "circle_inside_x_yellow",
             "circle_inside_x_yellow",
-            "outward_arrows"};
+            "outward_arrows"*/};
     }
 
     std::unordered_map<std::string, int> count_cards_repeats()
@@ -855,7 +856,6 @@ private:
             //(success) ? send_success(player, action, response) : send_error(player, action, response);
             if (success)
             {
-                std::cout << "Player created game" << std::endl;
                 send_success(player, action, response);
                 update_lobbies();
             }
@@ -1132,7 +1132,6 @@ private:
         }
         std::string username = message["username"];
 */          
-        std::cout << player.username << " Want to create game" << std::endl;
         std::string username = player.username;
         if (!check_valid_username(username))
         {
@@ -1189,15 +1188,12 @@ private:
         Game &game = *games.at(game_id);
 
         std::string user_to_remove_name;
-        std::cout << "game owner: " << game.get_owner() << std::endl;
         if (message.contains("username") && player.username == game.get_owner())
         {
             //json response = {{"error", "Missing 'username' field."}};
             //return make_pair(false, response);
             user_to_remove_name = message["username"];
-            std::cout << player.username << " Wants to kick: " << user_to_remove_name  << std::endl;
         } else {
-            std::cout << player.username << " Want to leave game" << std::endl;
             user_to_remove_name = player.username;
         }
 
@@ -1244,7 +1240,6 @@ private:
             json response = {{"error", "Cannot remove another player from lobby as its non-owner"}};
             return make_pair(false, response);
         }
-
         auto players_before_removal = game.get_players();
         players_in_games.erase(subject_to_remove_fd);
         game.remove_player(subject_to_remove_fd);
@@ -1317,7 +1312,6 @@ private:
         }
         std::string username = message["username"];
 */
-        std::cout << player.username << "Wants to join lobby";
         std::string username = player.username;
 
         if (!check_valid_username(username))
@@ -1467,8 +1461,13 @@ private:
         Game &game = *games.at(main_player.get_game_id());
         if (game.get_owner() == main_player.get_username() && game.get_players().size())
         {
-            start_game(game);
+            for (auto &p : game.get_players())
+            {
+                p->cards_facing_up.clear();
+                p->cards_facing_down.clear();
+            }
 
+            start_game(game);
             json response = list_games();
             for (const int player_fd : players_out_of_games)
             {

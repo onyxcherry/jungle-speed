@@ -502,7 +502,6 @@ public:
 
                                 for (auto& k : kick_buttons) {
                                     if (isClicked(k.btn, sf::Mouse::getPosition(window)) && k.player_name != curr_lobby.owner_name) {
-                                        std::cout<< "Chcesz wyrzucic: " << k.player_name << std::endl;
                                         kick_player_by_owner(k.player_name);
                                     }
                                 }
@@ -516,7 +515,6 @@ public:
                                     }
                                 }
                                 if (isClicked(exitButton, sf::Mouse::getPosition(window))) {
-                                    std::cout << "Wychodze" << std::endl;     
                                     exit_lobby();
                                 }
                                 if (isClicked(turnCardBtn, sf::Mouse::getPosition(window))) {
@@ -893,7 +891,6 @@ public:
                 if (event.type == sf::Event::MouseButtonPressed) {
                     if (event.mouseButton.button == sf::Mouse::Left) {
                         if (isClicked(join_btn, sf::Mouse::getPosition(window))) {
-                                std::cout << "Klikenito create" << std::endl;
                                 create_game();
                         }
                         for (auto& lobby : lobbyList) {
@@ -1017,7 +1014,6 @@ public:
     void handle_response() {
         while(true) {
         std::string response = receive_message();
-        std::cout << response << std::endl;
         std::vector<json> roots;
 
         if (!response.empty())
@@ -1107,10 +1103,28 @@ public:
         sf::Sprite sprite;
         window.clear(sf::Color(30, 30, 30));
         sprite.setTexture(textures[11]);
+        //Exit Button
+        sf::RectangleShape exitButton;
+        create_exit_button(window, exitButton);
 
         while (window.pollEvent(event)) {
                 if (event.type == sf::Event::Closed)
                     window.close();
+                    if (event.type == sf::Event::MouseButtonPressed) {
+                            if (event.mouseButton.button == sf::Mouse::Left) {
+                                if (isClicked(exitButton, sf::Mouse::getPosition(window))) {
+                                    exit_lobby();
+                                    im_game_winner=false;
+                                    game_has_ended=false;
+                                    in_game=false;
+                                    game_started=false;
+                                    clear_totem_holder();
+                                    clear_duel();
+
+                                }
+                                continue;
+                    }
+                }
             } 
 
         if(im_game_winner) {
@@ -1348,12 +1362,10 @@ private:
         {
             setup_usernames(root);
             setup_players(root);
-            std::cout << "Tu przechodzi" << std::endl;
             curr_lobby.position_in_game = root["position"].get<int>();
             curr_lobby.game_id = root["game_id"].get<int>();
             set_is_owner(true);
             set_in_game(true);
-            std::cout << "Onwer is: " << root["owner"].get<std::string>() << std::endl;
             curr_lobby.owner_name = root["owner"].get<std::string>();
         }
         else
@@ -1455,16 +1467,6 @@ private:
         if (!response.empty())
         {
             json root = json::parse(response);
-            /*
-            if (root.contains("error"))
-            {
-                std::cout << "Error: " << root["error"].get<std::string>() << "\n";
-            }
-            else
-            {
-                std::cout << "Turned card: " << root["card"].get<std::string>() << "\n";
-            }
-            */
         }
         else
         {
@@ -1494,17 +1496,6 @@ private:
         if (!response.empty())
         {
             json root = json::parse(response);
-            /*
-            if (root.contains("error"))
-            {
-                std::cout << "Error: " << root["error"].get<std::string>() << "\n";
-            }
-            else
-            {
-                std::cout << "Totem caught!\n";
-                
-            }
-            */
         }
         else
         {
@@ -1607,9 +1598,6 @@ private:
         inputBox.enterButtonText.setPosition(center_in_button(inputBox.enterButton, inputBox.enterButtonText.getGlobalBounds())); 
        
         sf::FloatRect bounds = inputBox.enterButtonText.getGlobalBounds();
-        std::cout << bounds.left << std::endl;
-        std::cout << bounds.top << std::endl;
-
 
         inputBox.errorText = createText(font, "", 18);
         inputBox.errorText.setFillColor(sf::Color::Red);
@@ -1644,14 +1632,11 @@ private:
                         if (isClicked(inputBox.box, sf::Mouse::getPosition(window))) {
                             sf::Vector2i mousePosition = sf::Mouse::getPosition(window);
 
-                            // Wyświetlamy pozycję
-                            std::cout << "Pozycja myszy: (" << mousePosition.x << ", " << mousePosition.y << ")\n";
 
                             inputBox.isActive = true;
                             inputBox.box.setOutlineColor(sf::Color(100,200,100));
                             //inputBox.enterText.setString("XDDDD");
                         } else {
-                            std::cout << inputBox.isActive << std::endl;
                             inputBox.isActive = isClicked(inputBox.enterButton, sf::Mouse::getPosition(window)) == true ? inputBox.isActive : false;
 
                             if(!inputBox.isActive) inputBox.box.setOutlineColor(sf::Color(169,169,169));
@@ -1661,7 +1646,6 @@ private:
                             sf::Vector2i mousePosition = sf::Mouse::getPosition(window);
 
                             // Wyświetlamy pozycję
-                            std::cout << "Pozycja myszy: (" << mousePosition.x << ", " << mousePosition.y << ")\n";
                             if(inputBox.user_input.size() < 3) {
                                 //inputBox.showError = true;
                                 inputBox.errorText.setString("Username is too short!");
@@ -1698,7 +1682,6 @@ private:
                         }
                         //inputBox.user_input = inputBox.user_input + static_cast<char>(event.text.unicode);
                     }
-                    //std::cout << inputBox.user_input<< std::endl;
                     inputBox.usetInputText.setString(inputBox.user_input);
                     inputBox.usetInputText.setPosition(
                         set_in_the_middle(inputBox.usetInputText.getGlobalBounds()));
@@ -1744,7 +1727,6 @@ private:
         json request;
         request["action"] = "LEAVE_GAME";
         request["game_id"] = curr_lobby.game_id;
-        std::cout << curr_lobby.game_id << std::endl;
         send_message(request.dump());
 
     };
@@ -1754,7 +1736,6 @@ private:
         request["action"] = "LEAVE_GAME";
         request["game_id"] = curr_lobby.game_id;
         request["username"] = kicked_name;
-        std::cout << curr_lobby.game_id << std::endl;
         send_message(request.dump()); 
     }
 
