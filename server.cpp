@@ -447,11 +447,9 @@ public:
 private:
     std::vector<std::string> generate_cards()
     {
-        // TODO; assert that no more than 2 same cards exist
         return std::vector<std::string>{
             "circle_inside_x_red",
             "circle_inside_x_red"
-            /*,
             "circle_inside_x_blue",
             "circle_inside_x_yellow",
             "circle_inside_x_red",
@@ -459,7 +457,7 @@ private:
             "circle_inside_x_yellow",
             "circle_inside_x_yellow",
             "circle_inside_x_yellow",
-            "outward_arrows"*/};
+            "outward_arrows"};
     }
 
     std::unordered_map<std::string, int> count_cards_repeats()
